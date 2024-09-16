@@ -4,8 +4,8 @@ https://github.com/SkyTNT/midi-model
 
 Changes made by MYK:
 
+* Maode a colab compatible notebook
 * Removed Flash=True as this stopped it from working due to some rot on the python packages
  (https://github.com/SkyTNT/midi-model/issues/14)
-* For the notebook, edited it to run in colab
 
 
