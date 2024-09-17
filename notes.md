@@ -1,5 +1,46 @@
 # Some notes
 
+## 17/09/2024
+
+
+### Going back to Multitrack  Music Transformer (2023)
+
+https://github.com/salu133445/mmt
+
+Based on the x-transformers package which implements all kinds of funky transformer stuff that might be useful here.
+
+https://github.com/lucidrains/x-transformers
+
+Next steps: 
+* I have downloaded their pre-trained models. They are small! midi-lm is nearly 1gig. These are 79 mb.
+* Does it work? 
+* Can you fine tune it? Hopefully on my laptop as the models are small.
+
+### SkyTNT
+
+I did a finetuning run from SkyTNT's checkpoint with the jazz piano dataset.
+
+Next steps:
+
+* ** Try to operationalise the code in a realtime improv context: MIDI in, MIDI out**
+* Consider compositional ideas: piano in, full backing track out etc. 
+* Possibly check out the fintunes: https://huggingface.co/skytnt/midi-model-ft/blob/main/README.md
+* Investigate the MIDI data format, e.g. can we transpose everything to one key etc.
+  Apparently it is trained on this: https://huggingface.co/datasets/projectlosangeles/Los-Angeles-MIDI-Dataset#make-your-own-los-angeles-midi-dataset-from-any-midi-scrape
+* Investigate cheaper GPU options than colab 
+
+### 
+
+### Music-LM
+
+I found this 2023/ 2024 repository which implements a MIDI to MIDI model:
+
+https://github.com/jeremyjordan/midi-lm
+
+It provides a training script but I can't see any pre-trained models.
+
+So this might be one to compare to skytnt, if I can find a pre-trained model or train one myself.	
+
 ## 16/09/2024
 
 ### SkyTNT's MIDI transforner
@@ -109,6 +150,10 @@ https://github.com/salu133445/mmt
 Based on the x-transformers package which implements all kinds of funky transformer stuff that might be useful here.
 
 https://github.com/lucidrains/x-transformers
+
+Next steps: 
+* Does it work? 
+* Can you fine tune it?
 
 ### DDSP-MIDI
 
