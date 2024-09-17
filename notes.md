@@ -2,6 +2,30 @@
 
 ## 17/09/2024
 
+### Progress at the end of the day
+
+I was able to run all the scripts except speed_test for the MMT transformer model, at least on its
+SOD dataset. And on my local machine. 
+
+I had to apply some code fixes to libraries, even muspy to make it work
+I also had to fandangle the python setup. Ultimately, a specific version of
+pytorch (not 2) and a specific version of x-transformers made it work
+It seems x-transformers is not compatible with some modules in pytorch 2.
+
+It generates MIDI of a decent quality in response to other MIDI
+
+I also obtained a load of different sound fonts and a fluidsynth VST wrapper.
+
+So now I can easily play MMT-generated MIDI files in realtime in a decent environment.
+
+MMT also has an evaluation script that applies metrics around rhythmic consistency 
+and note pitch correctness to outputs. 
+
+Next steps:
+* I have two models that I can infer with and train: MMT and music-lm
+* MMT is some sort of x-transformers thing, music-lm is a 
+
+
 
 ### Going back to Multitrack  Music Transformer (2023)
 
@@ -13,7 +37,8 @@ https://github.com/lucidrains/x-transformers
 
 Next steps: 
 * I have downloaded their pre-trained models. They are small! midi-lm is nearly 1gig. These are 79 mb.
-* Does it work? 
+* It can train, yes. 
+* Does it infer? Trying that now
 * Can you fine tune it? Hopefully on my laptop as the models are small.
 
 ### SkyTNT
