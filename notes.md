@@ -1,4 +1,62 @@
-# Some notes
+# Notes on building Barcelona system
+
+## 25/09/2024
+
+Progress today:
+
+- got SkyTNT llama music model to train from scratch on the jazz piano dataset
+- after 7000 steps the first few seconds of output are quite good! 
+- next step there is to transpose all the pieces to the same key and train on that
+- also to op
+
+
+### Sound font plugin
+
+Waste loads of time trying to build this soundfont vst: https://github.com/Birch-san/juicysfplugin
+Then return to the original one here: 
+
+This fork worked with a bit of editing on the call from processBlock to fluidsynth to map the buffer into it:
+
+https://github.com/studiorack/juicysf
+
+Also got my original back. All good now. 
+
+### Training stuff:
+
+- Get the SkyTNT model to train on igor
+- Get those soundfonts working in reaper on my new OS install
+- Make the realtime inference system
+- Investigate training on jazz piano dataset
+  - is the loss function appropriate for mono
+  - format for MMT
+  - format for SkyTNT
+- investigate training with weimar dataset
+
+- what about the realtime inference/orchestration idea
+   * ok this is a goer with the models I have 
+   -> just need to implement realtime and autoregression data flow
+   * best model for this is to play all the parts except the one they are playing (a la reflexive looper)
+
+- what about the 'filling in the gap' model? 
+  * v1: reflexive looper model: play all the parts except the one 
+
+## 24/09/2024
+
+(rewriting as I lost my notes by not saving)
+
+Today I was experimenting with training on the GS GPU server. I managed to get MMT to train on the SOD data set using the RPE and APE encoding models. Had to do a few edits on scripts to make it work on Python3.8 which is what is on that machine:
+
+- changed file extensions in one of the data prep scripts to '.csv' '.npy' instead of 'csv'
+- chnaged the argparser setup to deal with missing BooleanValue thing in 3.8 
+- I think that was about it
+
+I left a training run going for 10 hours to see what the result is. I set the save interval at 10,000 so I wouldn't get too many saved models. 
+
+Next steps here:
+- noting that they already provide pre-trained models for all their datasets and settings, not much point in me doing any more training runs on their data/ settings. But I should compare my trained model to their trained model with the SOD/ RPE setup to verify training is working as expected....
+- Download the best model, check loss, compare the model to their version of that model
+* Possibly see about training on that LA dataset that SkyTNT is trained on - get the data at least
+- What about training on same key, single instrument data?
 
 ## 17/09/2024
 
@@ -23,9 +81,7 @@ and note pitch correctness to outputs.
 
 Next steps:
 * I have two models that I can infer with and train: MMT and music-lm
-* MMT is some sort of x-transformers thing, music-lm is a 
-
-
+* MMT is some sort of x-transformers thing, music-lm is a llama model (using huggingface)
 
 ### Going back to Multitrack  Music Transformer (2023)
 
