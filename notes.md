@@ -1,13 +1,152 @@
 # Notes on building Barcelona system
 
+## 26/09/2024
+
+### Next steps:
+
+- need to operationalise the skytnt model in a realtime context
+- has good potential because the repo comes with onnx exports and an onnx exporter script. 
+- then can try some different training styles as per tegrity/ conditioning
+
+- possibly also operationalise the tegrity models ... is a simple export possible here?
+- then train some monophonic models with chord conditioning if at all possible
+- then onto timbre of course.
+
+### Some notes about different transformer architectures
+
+Looked deeper into the SkyTNT transformer model, following the info about the LA dataset and tegridy. Found this repo:
+
+https://github.com/asigalov61
+
+@inproceedings{lev2024tegridytools,
+    title       = {tegridy-tools: Symbolic Music NLP Artificial Intelligence Toolkit},
+    author      = {Aleksandr Lev},
+    booktitle   = {GitHub},
+    year        = {2024},
+}
+
+
+Lev's repo' contains all kinds of pre-trained music transformers. It is all based around the x-transformers model from lucidrains, but modified slightly. The repos for the various models contain this:
+
+https://github.com/asigalov61/Ultimate-Accompaniment-Transformer/blob/main/x_transformer_1_23_2.py
+
+Then it is created something like this:
+
+```
+model = TransformerWrapper(
+    num_tokens = PAD_IDX+1,
+    max_seq_len = SEQ_LEN,
+    attn_layers = Decoder(dim = 2048, depth = 4, heads = 16, attn_flash = True)
+    )
+
+model = AutoregressiveWrapper(model, ignore_index = PAD_IDX, pad_value=PAD_IDX)
+```
+
+So it is essentially a basic transformer model plus flash attention, but without positional encoding. Compared to the SkyTNT model, that uses the class 'LlamaModel' from huggingface transformers:
+
+https://github.com/huggingface/transformers/tree/main/docs/source/en/model_doc
+(search for llama, llama2, llama3)
+
+Apparently, LlamaModel is ''The bare LLaMA Model outputting raw hidden-states without any specific head on top'. Huggingface use that model to wrap all llama versions (1,2,3). You get a different version of llama depending on which parameters you send in when you create it. SkyTNT creates it like this:
+
+```
+self.net = LlamaModel(LlamaConfig(vocab_size=tokenizer.vocab_size,
+                                          hidden_size=n_embd, num_attention_heads=n_head,
+                                          num_hidden_layers=n_layer, intermediate_size=n_inner,
+                                          pad_token_id=tokenizer.pad_id, max_position_embeddings=4096))
+```
+
+This is not llama2, as that adds 'Grouped Query Attention' with the 'num_key_value_heads (`int`, *optional*)' param which SkyTNT does not use. For info, the HF info about llama3 says: 'The architecture is exactly the same as Llama2.'. 
+
+The other model I have been looking at and training is the multitrack music transformer:
+
+```bibtex
+@inproceedings{dong2023mmt,
+    author = {Hao-Wen Dong and Ke Chen and Shlomo Dubnov and Julian McAuley and Taylor Berg-Kirkpatrick},
+    title = {Multitrack Music Transformer},
+    booktitle = {IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)},
+    year = 2023,
+}
+```
+
+The transformer model in this one is:
+
+```
+       transformer_kwargs = {
+            "max_seq_len": kwargs.pop("max_seq_len"),
+            "max_beat": kwargs.pop("max_beat"),
+            "emb_dropout": kwargs.pop("emb_dropout", 0),
+            "use_abs_pos_emb": kwargs.pop("use_abs_pos_emb", True),
+        }
+        self.decoder = MusicTransformerWrapper(
+            encoding=encoding,
+            attn_layers=Decoder(dim=dim, **kwargs),
+            **transformer_kwargs,
+        )
+        self.decoder = MusicAutoregressiveWrapper(
+            self.decoder, encoding=encoding
+        )
+```
+The important bits are the 'attn_layers' which is a Decoder from lucidrains x_transformers library:
+
+```
+from x_transformers.x_transformers import (
+    AbsolutePositionalEmbedding,
+    AttentionLayers,
+    Decoder,
+    TokenEmbedding,
+    always,
+    default,
+    exists,
+)
+```
+
+These are the args:
+
+```
+dim=args.dim, (512 default)
+encoding=encoding,
+depth=args.layers, (6)
+heads=args.heads,  (8)
+max_seq_len=args.max_seq_len (1024),
+max_beat=args.max_beat, (256)
+rotary_pos_emb=args.rel_pos_emb, (yes/no)
+use_abs_pos_emb=args.abs_pos_emb, (yes/no)
+emb_dropout=args.dropout,
+attn_dropout=args.dropout,
+ff_dropout=args.dropout,
+```
+
+So not sure if they are using flash attention there, but the paper seems to focus on the idea of position embeddings which the other systems do not use, as far as I can tell, though need to check the llama implementation from HF to confirm.
+
+### Tokenisers/ tokenizers
+
+Another point where the SkyTNT model vs. Lev tegridy models diverge is probably the tokenizer. That is something I will need to understand in order to make a realtime version, since I'll need to encode a MIDI stream into the correct format for the model.
+
 ## 25/09/2024
 
-Progress today:
+### Next steps:
+
+- RUNNING train from scratch with the LA formatted, transposed data 
+- RUNNING try a fine tune from trained model using LA formatted data. I /think/ tranposing is not needed for that. 
+
+### Progress today:
 
 - got SkyTNT llama music model to train from scratch on the jazz piano dataset
 - after 7000 steps the first few seconds of output are quite good! 
+- after 25,000 steps, sounding quite good too
+- also figured out how to transpose all the pieces to c min/maj which will give it more tonal information from the limited dataset
+- further, worked out how to convert the dataset into 'LA' format, which is supposedly better for training
+
+
+### Sort out the dataset for skytnt model training:
+
 - next step there is to transpose all the pieces to the same key and train on that
-- also to op
+- and to sort out the timing so it is not just cecil taylor all the way
+
+-> timing
+Check out how the timing processing works on the la dataset
+Convert my data into LA format? 
 
 
 ### Sound font plugin
