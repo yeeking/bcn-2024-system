@@ -5,7 +5,6 @@ import torch.nn.functional as F
 import tqdm
 import pytorch_lightning as pl
 from transformers import LlamaModel, LlamaConfig
-from transformers import LlamaForCausalLM
 
 from midi_tokenizer import MIDITokenizer
 
