@@ -77,3 +77,5 @@ if __name__ == '__main__':
                                                                        "hidden": {0: "batch", 1: "emb"},
                                                                        "y": {0: "batch", 1: "token_seq1", 2: "voc"}},
                     opt.model_token_out)
+	# this would save the model for torch....
+	#torch.save(model.state_dict(), 'small_model.ckpt')

@@ -12,6 +12,32 @@
 - then train some monophonic models with chord conditioning if at all possible
 - then onto timbre of course.
 
+### Making SkyTNT work in realtime
+
+- trimmed the gradio app to a minimal setup that can do a continuation on a midi file
+- now want to receive MIDI in realtime
+- the MIDI.py thing works with raw binary MIDI file data! need to work around that somehow
+
+Need to convert the incoming MIDI into the appropriate encoding for the tokenizer.
+Reverse engineering the skytnt code, that appears to be the 'MIDI.score' format.
+This looks as follows:
+
+s[0] = 220 # the 'ticks' parameter
+s[1..n] # the tracks of data, where each track is a list of events
+# e.g.: s[1] (track 1) might be a load of special time config messages  
+s[1] = [['set_tempo', 0, 500000],
+ ['time_signature', 0, 4, 2, 24, 8],
+ ['text_event', 1, '']]
+# then s[2] (track 2) might be the first track of actual midi note events in the file
+s[2][1:5] =
+[['patch_change', 0, 0, 0],
+ ['note', 183, 99, 0, 50, 67],
+ ['note', 436, 43, 0, 35, 67],
+ ['note', 675, 71, 0, 48, 69],
+ ['note', 928, 71, 0, 47, 68]]
+ 
+So I need to format my incoming midi into that structure. Ideally, I can look at the output used in auto-regressive mode to see how that is. 
+
 ### Some notes about different transformer architectures
 
 Looked deeper into the SkyTNT transformer model, following the info about the LA dataset and tegridy. Found this repo:
