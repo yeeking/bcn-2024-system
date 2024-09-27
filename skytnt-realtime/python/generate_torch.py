@@ -137,8 +137,9 @@ def run():
     print(f"Generating from file {midi_file} with ckpt {ckpt}")
 
     tokenizer = MIDITokenizer()
-    model = MIDIModel(tokenizer).to(device='cpu')
+    model = MIDIModel(tokenizer).to(device='cuda')
     load_model(ckpt, model)
+    print(model)
      
     generate_midi_seq(model, tokenizer, midi_file, 
                       n_events_from_file=128, 

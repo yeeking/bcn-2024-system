@@ -1,16 +1,14 @@
 # Notes on building Barcelona system
 
+## 27/09/2024
+
+### Back to realtime MIDI input
+
+After wasting a few hours on ROCM yesteday, I am cracking on with the realtime MIDI input -> continuator implementation. 
+
+I looked into the MIDI tokenizer input before. So I am going to start in Python then work out how to tokenize some MIDI grabbed from a MIDI device into the correct format, which is whatever you get from the MIDI.py library's score format. I think. 
+
 ## 26/09/2024
-
-### Next steps:
-
-- need to operationalise the skytnt model in a realtime context
-- has good potential because the repo comes with onnx exports and an onnx exporter script. 
-- then can try some different training styles as per tegrity/ conditioning
-
-- possibly also operationalise the tegrity models ... is a simple export possible here?
-- then train some monophonic models with chord conditioning if at all possible
-- then onto timbre of course.
 
 ### Making SkyTNT work in realtime
 
@@ -37,6 +35,50 @@ s[2][1:5] =
  ['note', 928, 71, 0, 47, 68]]
  
 So I need to format my incoming midi into that structure. Ideally, I can look at the output used in auto-regressive mode to see how that is. 
+
+### ROCm roll (ugh)
+
+Did some mucking about with ROCm, since I now have all that stuff installed on my laptop. Was hoping to see things running faster. 
+
+I now have a cuda device registering and visible from pytorch, after installing a custom build of pytorch from here:
+
+https://repo.radeon.com/rocm/manylinux/rocm-rel-6.2/
+
+rocminfo says that ''ROCk module version 6.8.5 is loaded'. I had to add myself to the video group and reboot. 
+
+I tried running the basic app.py for skytnt using cuda as the device but no dice there. I crash out with a RuntimeError: HIP error: invalid device function. Looks kinda insurmountable, implies my graphics card can't do whatever that is. Maybe a different driver? who knows. Need to move on. 
+
+Then tried running the onnx runtime version of the app to see if onnx can talk better to my ROCM stuff than pytorch. There is a line in app_onnx.py where the runtime is set:
+
+```
+providers = ['MIGraphXExecutionProvider', 'ROCMExecutionProvider']
+
+# and since:
+import onnxruntime as ort
+ort.get_device()
+# prints
+ 'GPU-MIGRAPHX'
+```
+I went for MIGraphXExecutionProvider. It takes a long time to load the mode, and then crashes out on some sort of compile step. Some value is set to zero:
+```
+2024-09-27 12:05:06.450081551 [E:onnxruntime:, sequential_executor.cc:514 ExecuteKernel] Non-zero status code returned while running MGXKernel_graph_torch-jit-export_4651530453327880677_0 node. Name:'MIGraphXExecutionProvider_MGXKernel_graph_torch-jit-export_4651530453327880677_0_0' Status Message: Failed to call function
+```
+
+yeah some missing function again. Maybe that's my cheapo ROCM! 
+
+Giving up and moving on. ps I also tried 
+
+
+### Next steps:
+
+- need to operationalise the skytnt model in a realtime context
+- has good potential because the repo comes with onnx exports and an onnx exporter script. 
+- then can try some different training styles as per tegrity/ conditioning
+
+- possibly also operationalise the tegrity models ... is a simple export possible here?
+- then train some monophonic models with chord conditioning if at all possible
+- then onto timbre of course.
+
 
 ### Some notes about different transformer architectures
 

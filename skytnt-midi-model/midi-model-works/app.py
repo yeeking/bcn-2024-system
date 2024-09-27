@@ -197,7 +197,7 @@ drum_kits2number = {v: k for k, v in number2drum_kits.items()}
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=7860, help="gradio server port")
-    parser.add_argument("--device", type=str, default="cpu", help="device to run model")
+    parser.add_argument("--device", type=str, default="cuda", help="device to run model")
     soundfont_path = hf_hub_download(repo_id="skytnt/midi-model", filename="soundfont.sf2")
     opt = parser.parse_args()
     tokenizer = MIDITokenizer()

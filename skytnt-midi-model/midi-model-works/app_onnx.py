@@ -15,6 +15,7 @@ import MIDI
 from midi_synthesizer import synthesis
 from midi_tokenizer import MIDITokenizer
 
+print("Loaded onnx... device is: ", rt.get_device())
 
 def softmax(x, axis):
     x_max = np.amax(x, axis=axis, keepdims=True)
@@ -254,7 +255,10 @@ if __name__ == "__main__":
         exit(-1)
 
     tokenizer = MIDITokenizer()
-    providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+    # providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+    # providers = ['MIGraphXExecutionProvider', 'ROCMExecutionProvider']
+    providers = [ 'MIGraphXExecutionProvider', 'CPUExecutionProvider']
+    
     try:
         model_base = rt.InferenceSession(opt.model_base_path, providers=providers)
         model_token = rt.InferenceSession(opt.model_token_path, providers=providers)
