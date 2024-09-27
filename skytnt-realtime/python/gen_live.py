@@ -21,8 +21,10 @@ selected_device = midi_devices[device_index]
 print(f"Connecting to: {selected_device}")
 
 # Callback function to handle incoming MIDI messages
-def midi_callback(message):
-    print(f"Received message: {message}")
+def midi_callback(message:mido.Message):
+    # print(f"Received message: {message}")
+    if message.type == 'note_on' or message.type == 'note_off':
+        print(message)
 
 # Open the selected MIDI input port with a callback
 # with mido.open_input(selected_device) as inport:

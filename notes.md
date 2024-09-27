@@ -8,6 +8,10 @@ After wasting a few hours on ROCM yesteday, I am cracking on with the realtime M
 
 I looked into the MIDI tokenizer input before. So I am going to start in Python then work out how to tokenize some MIDI grabbed from a MIDI device into the correct format, which is whatever you get from the MIDI.py library's score format. I think. 
 
+I managed to get a minimal version of the python gen script that uses onnx models instead of torch. It seems to run a bit quicker than the torch models too.
+
+
+
 ## 26/09/2024
 
 ### Making SkyTNT work in realtime
