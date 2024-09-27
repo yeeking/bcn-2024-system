@@ -1,7 +1,8 @@
-import random
+# import random
 
-import PIL
-import numpy as np
+# import PIL
+
+# import numpy as np
 
 
 class MIDITokenizer:
@@ -161,94 +162,94 @@ class MIDITokenizer:
             tracks[i] = track
         return [ticks_per_beat, *tracks]
 
-    def midi2img(self, midi_score):
-        ticks_per_beat = midi_score[0]
-        notes = []
-        max_time = 1
-        track_num = len(midi_score[1:])
-        for track_idx, track in enumerate(midi_score[1:]):
-            for event in track:
-                t = round(16 * event[1] / ticks_per_beat)
-                if event[0] == "note":
-                    d = max(1, round(16 * event[2] / ticks_per_beat))
-                    c, p = event[3:5]
-                    max_time = max(max_time, t + d + 1)
-                    notes.append((track_idx, c, p, t, d))
-        img = np.zeros((128, max_time, 3), dtype=np.uint8)
-        colors = {(i, j): np.random.randint(50, 256, 3) for i in range(track_num) for j in range(16)}
-        for note in notes:
-            tr, c, p, t, d = note
-            img[p, t: t + d] = colors[(tr, c)]
-        img = PIL.Image.fromarray(np.flip(img, 0))
-        return img
+    # def midi2img(self, midi_score):
+    #     ticks_per_beat = midi_score[0]
+    #     notes = []
+    #     max_time = 1
+    #     track_num = len(midi_score[1:])
+    #     for track_idx, track in enumerate(midi_score[1:]):
+    #         for event in track:
+    #             t = round(16 * event[1] / ticks_per_beat)
+    #             if event[0] == "note":
+    #                 d = max(1, round(16 * event[2] / ticks_per_beat))
+    #                 c, p = event[3:5]
+    #                 max_time = max(max_time, t + d + 1)
+    #                 notes.append((track_idx, c, p, t, d))
+    #     img = np.zeros((128, max_time, 3), dtype=np.uint8)
+    #     colors = {(i, j): np.random.randint(50, 256, 3) for i in range(track_num) for j in range(16)}
+    #     for note in notes:
+    #         tr, c, p, t, d = note
+    #         img[p, t: t + d] = colors[(tr, c)]
+    #     img = PIL.Image.fromarray(np.flip(img, 0))
+    #     return img
 
-    def augment(self, midi_seq, max_pitch_shift=4, max_vel_shift=10, max_cc_val_shift=10, max_bpm_shift=10,
-                max_track_shift=1, max_channel_shift=16):
-        pitch_shift = random.randint(-max_pitch_shift, max_pitch_shift)
-        vel_shift = random.randint(-max_vel_shift, max_vel_shift)
-        cc_val_shift = random.randint(-max_cc_val_shift, max_cc_val_shift)
-        bpm_shift = random.randint(-max_bpm_shift, max_bpm_shift)
-        track_shift = random.randint(0, max_track_shift)
-        channel_shift = random.randint(0, max_channel_shift)
-        midi_seq_new = []
-        for tokens in midi_seq:
-            tokens_new = [*tokens]
-            if tokens[0] in self.id_events:
-                name = self.id_events[tokens[0]]
-                for i, pn in enumerate(self.events[name]):
-                    if pn == "track":
-                        tr = tokens[1 + i] - self.parameter_ids[pn][0]
-                        tr += track_shift
-                        tr = tr % self.event_parameters[pn]
-                        tokens_new[1 + i] = self.parameter_ids[pn][tr]
-                    elif pn == "channel":
-                        c = tokens[1 + i] - self.parameter_ids[pn][0]
-                        c0 = c
-                        c += channel_shift
-                        c = c % self.event_parameters[pn]
-                        if c0 == 9:
-                            c = 9
-                        elif c == 9:
-                            c = (9 + channel_shift) % self.event_parameters[pn]
-                        tokens_new[1 + i] = self.parameter_ids[pn][c]
+    # def augment(self, midi_seq, max_pitch_shift=4, max_vel_shift=10, max_cc_val_shift=10, max_bpm_shift=10,
+    #             max_track_shift=1, max_channel_shift=16):
+    #     pitch_shift = random.randint(-max_pitch_shift, max_pitch_shift)
+    #     vel_shift = random.randint(-max_vel_shift, max_vel_shift)
+    #     cc_val_shift = random.randint(-max_cc_val_shift, max_cc_val_shift)
+    #     bpm_shift = random.randint(-max_bpm_shift, max_bpm_shift)
+    #     track_shift = random.randint(0, max_track_shift)
+    #     channel_shift = random.randint(0, max_channel_shift)
+    #     midi_seq_new = []
+    #     for tokens in midi_seq:
+    #         tokens_new = [*tokens]
+    #         if tokens[0] in self.id_events:
+    #             name = self.id_events[tokens[0]]
+    #             for i, pn in enumerate(self.events[name]):
+    #                 if pn == "track":
+    #                     tr = tokens[1 + i] - self.parameter_ids[pn][0]
+    #                     tr += track_shift
+    #                     tr = tr % self.event_parameters[pn]
+    #                     tokens_new[1 + i] = self.parameter_ids[pn][tr]
+    #                 elif pn == "channel":
+    #                     c = tokens[1 + i] - self.parameter_ids[pn][0]
+    #                     c0 = c
+    #                     c += channel_shift
+    #                     c = c % self.event_parameters[pn]
+    #                     if c0 == 9:
+    #                         c = 9
+    #                     elif c == 9:
+    #                         c = (9 + channel_shift) % self.event_parameters[pn]
+    #                     tokens_new[1 + i] = self.parameter_ids[pn][c]
 
-                if name == "note":
-                    c = tokens[5] - self.parameter_ids["channel"][0]
-                    p = tokens[6] - self.parameter_ids["pitch"][0]
-                    v = tokens[7] - self.parameter_ids["velocity"][0]
-                    if c != 9:  # no shift for drums
-                        p += pitch_shift
-                    if not 0 <= p < 128:
-                        return midi_seq
-                    v += vel_shift
-                    v = max(1, min(127, v))
-                    tokens_new[6] = self.parameter_ids["pitch"][p]
-                    tokens_new[7] = self.parameter_ids["velocity"][v]
-                elif name == "control_change":
-                    cc = tokens[5] - self.parameter_ids["controller"][0]
-                    val = tokens[6] - self.parameter_ids["value"][0]
-                    if cc in [1, 2, 7, 11]:
-                        val += cc_val_shift
-                        val = max(1, min(127, val))
-                    tokens_new[6] = self.parameter_ids["value"][val]
-                elif name == "set_tempo":
-                    bpm = tokens[4] - self.parameter_ids["bpm"][0]
-                    bpm += bpm_shift
-                    bpm = max(1, min(255, bpm))
-                    tokens_new[4] = self.parameter_ids["bpm"][bpm]
-            midi_seq_new.append(tokens_new)
-        return midi_seq_new
+    #             if name == "note":
+    #                 c = tokens[5] - self.parameter_ids["channel"][0]
+    #                 p = tokens[6] - self.parameter_ids["pitch"][0]
+    #                 v = tokens[7] - self.parameter_ids["velocity"][0]
+    #                 if c != 9:  # no shift for drums
+    #                     p += pitch_shift
+    #                 if not 0 <= p < 128:
+    #                     return midi_seq
+    #                 v += vel_shift
+    #                 v = max(1, min(127, v))
+    #                 tokens_new[6] = self.parameter_ids["pitch"][p]
+    #                 tokens_new[7] = self.parameter_ids["velocity"][v]
+    #             elif name == "control_change":
+    #                 cc = tokens[5] - self.parameter_ids["controller"][0]
+    #                 val = tokens[6] - self.parameter_ids["value"][0]
+    #                 if cc in [1, 2, 7, 11]:
+    #                     val += cc_val_shift
+    #                     val = max(1, min(127, val))
+    #                 tokens_new[6] = self.parameter_ids["value"][val]
+    #             elif name == "set_tempo":
+    #                 bpm = tokens[4] - self.parameter_ids["bpm"][0]
+    #                 bpm += bpm_shift
+    #                 bpm = max(1, min(255, bpm))
+    #                 tokens_new[4] = self.parameter_ids["bpm"][bpm]
+    #         midi_seq_new.append(tokens_new)
+    #     return midi_seq_new
 
-    def check_alignment(self, midi_seq, threshold=0.3):
-        total = 0
-        hist = [0] * 16
-        for tokens in midi_seq:
-            if tokens[0] in self.id_events and self.id_events[tokens[0]] == "note":
-                t2 = tokens[2] - self.parameter_ids["time2"][0]
-                total += 1
-                hist[t2] += 1
-        if total == 0:
-            return False
-        hist = sorted(hist, reverse=True)
-        p = sum(hist[:2]) / total
-        return p > threshold
+    # def check_alignment(self, midi_seq, threshold=0.3):
+    #     total = 0
+    #     hist = [0] * 16
+    #     for tokens in midi_seq:
+    #         if tokens[0] in self.id_events and self.id_events[tokens[0]] == "note":
+    #             t2 = tokens[2] - self.parameter_ids["time2"][0]
+    #             total += 1
+    #             hist[t2] += 1
+    #     if total == 0:
+    #         return False
+    #     hist = sorted(hist, reverse=True)
+    #     p = sum(hist[:2]) / total
+    #     return p > threshold

@@ -129,7 +129,7 @@ def generate_midi_seq(model:MIDIModel, tokenizer:MIDITokenizer, midi_filename, n
     
 
 def run():
-    ckpt = "last.ckpt"
+    ckpt = "small.ckpt"
     midi_file = 'input.mid'
 
     assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt
@@ -137,7 +137,7 @@ def run():
     print(f"Generating from file {midi_file} with ckpt {ckpt}")
 
     tokenizer = MIDITokenizer()
-    model = MIDIModel(tokenizer).to(device='cuda')
+    model = MIDIModel(tokenizer).to(device='cpu')
     load_model(ckpt, model)
     print(model)
      
