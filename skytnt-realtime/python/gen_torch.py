@@ -130,6 +130,7 @@ def generate_midi_seq(model:MIDIModel, tokenizer:MIDITokenizer, midi_filename, n
 
 def run():
     ckpt = "small.ckpt"
+    ckpt = "/Users/matthewyk/src/ai-music/bcn-2024-system/skytnt-realtime/models/skytnt-pre-trained-la-dataset.ckpt"
     midi_file = 'input.mid'
 
     assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt

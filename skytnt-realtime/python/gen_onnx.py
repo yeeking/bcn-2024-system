@@ -163,7 +163,7 @@ def run():
 
     py_tokenizer = MIDITokenizer()
     
-    providers = ['CPUExecutionProvider']
+    providers = ['CoreMLExecutionProvider', 'CPUExecutionProvider']
     
     try:
         model_base = rt.InferenceSession(model_base_path, providers=providers)
