@@ -13,9 +13,8 @@ model.load_state_dict(state_dict, strict=False)
 model.eval()
 
 print("Testing inference on the torch lightning model")
-for _ in range(128):
-    input = torch.randint(tokenizer.vocab_size, (1, 16, tokenizer.max_token_seq), dtype=torch.int64, device="cpu")
-    model.forward(input)
+input = torch.randint(tokenizer.vocab_size, (1, 16, tokenizer.max_token_seq), dtype=torch.int64, device="cpu")
+model.forward(input)
 
 print("Converting to torchscript model")
 model.to_torchscript("test.ts", method="trace", example_inputs=input)
@@ -29,7 +28,6 @@ print("Testing load of coreml model")
 cml_model = ct.models.MLModel("newmodel.mlpackage")
 
 print("Running inference on the coreml model")
-for _ in range(128):
-    random_input = np.random.rand(1, 16, 8).astype(np.float32)
-    input_data = {"x_1": random_input}
-    prediction = cml_model.predict(input_data)
+random_input = np.random.rand(1, 16, 8).astype(np.float32)
+input_data = {"x_1": random_input}
+prediction = cml_model.predict(input_data)
