@@ -1,5 +1,103 @@
 # Notes on building Barcelona system
 
+## 01/10/2024
+
+### Back to realtime gen
+
+Today's main task: format incoming MIDI messages to score format, as that is what the tokenized wants. First:
+
+* Check if the generator code is autoregressive. If so, means I am ready to be mixing in extra events to the context as it goes. How to do that? Look for multiple calls to model forward in the generator script with a longer length of output requested. 
+
+I have details of the score format
+
+### Moving on from coreml for now
+
+Need to make some progress with the live MIDI input today. 
+
+Progress made on coreml yesterday: 
+
+* I explored coreML and it seems to work well, going 5-10x as fast as CPU pytorch on my various macs.
+* I created a basic C++ project that is able to load a coreml model and run some numbers through it. 
+* I nearly completed a C++ project that loads in two separate models (tokenizer and base model) like the app_onnx python example and passes data from one to the other. Perhaps complete this, then switch back to live MIDI input?
+
+-> do a quick sanity check: how fast does the inference go on my 2070? Ok Then back to live MIDI if that'll work.'. Did that. coreml vs. torch on mac mini is 4x boost. cpu vs cuda on 2070 is 6x boost. Both good for realtime generation. 
+
+
+
+## 30/09/2024
+
+### Experimenting with coreml
+
+Tried running the onnx models with the coreml version of the onnxruntime on my mac studio, after observing that the CPU version is only slightly quicker than my AMD machine. The LLama model won't run on coreml in onnx runtime as the runtime does not support dynamic input sizes (I think). So I tried working directly with the coreml packages in Python. I was able to export the torch_lightning model to torchscript then to export the torchscript model to coreml format. I could them generate random numbers and pass them to the model by calling predict. 
+
+Torch infers 128 times in 8.8 seconds, coreml in 1 
+
+The inference looks really quick. This is good and means I might be able to make a mac version of a plugin in the future that uses coreml to run the model. Tempted to continue with this and to try to talk to the model from C++ but want to get live MIDI input going so more on that later. 
+
+### MIDI messages -> tokenizer input
+
+The MIDI.py file contains various functions to convert between representations of note data. The tokenizer receives 'score' format data as its input, then converts that for the model. 
+
+### What is score format? 
+
+Quoting from the MIDI.py docs:
+
+``The "opus" is a direct translation of the midi-file-events, where
+the times are delta-times, in ticks, since the previous event.
+
+The "score" is more human-centric; it uses absolute times, and
+combines the separate note_on and note_off events into one "note"
+event, with a duration."
+
+['note', start_time, duration,channel, note, velocity] # in a "score"
+
+E.g. 
+
+```
+my_score = [
+    96,
+    [   # track 0:
+        ['patch_change', 0, 1, 8],
+        ['note', 5, 96, 1, 25, 96],
+        ['note', 101, 96, 1, 29, 96]
+    ],   # end of track 0
+]
+```
+
+
+
+Score data can be parsed like this:
+```
+channels = {2,3,5,8,13}
+itrack = 1   # skip 1st element which is ticks
+while itrack < len(score):
+    for event in score[itrack]:
+        if event[0] == 'note':   # for example,
+            pass  # do something to all notes
+        # or, to work on events in only particular channels...
+        channel_index = MIDI.Event2channelindex.get(event[0], False)
+        if channel_index and (event[channel_index] in channels):
+            pass  # do something to channels 2,3,5,8 and 13
+    itrack += 1
+```
+
+
+### Events in the score format
+
+There are lots of events aside from 'note' in score format. Perhaps most interesting for now: 
+
+patch_change, 
+['patch_change', dtime, channel, patch]
+
+pitch_wheel_change, 
+['pitch_wheel_change', dtime, channel, pitch_wheel]
+
+set_tempo, 
+['set_tempo', dtime, tempo]
+
+key_signature:
+['key_signature', dtime, sf, mi]
+
 ## 27/09/2024
 
 ### Back to realtime MIDI input
@@ -10,7 +108,28 @@ I looked into the MIDI tokenizer input before. So I am going to start in Python 
 
 I managed to get a minimal version of the python gen script that uses onnx models instead of torch. It seems to run a bit quicker than the torch models too.
 
+### What actually is the control flow here?
 
+Assuming the improviser context, there are various interaction structures you could use
+
+* human solos, AI plays chords
+ -> input to the model is human solo, output is filtered to just chords (i.e. events occuring close to eachother and infrequently or something)
+* AI solos, human plays chords
+ -> input is human chords plus AI solo, output is filtered to just standalone notes
+* Both play together
+ -> input is human playing + AI playing, output is not filtered
+* trading fours
+ -> human plays something, AI plays something 
+
+Need a ring buffer for the short term memory of what is going on
+-> it should contain embeddings for token frames??
+
+UI:
+  Toggle AI listens to you -> ring buffer input sequence
+  Toggle AI listens to itself -> put AI output into the ring buffer	
+  Play last 
+  Output filter controls
+  
 
 ## 26/09/2024
 

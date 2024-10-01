@@ -1,3 +1,7 @@
+# Connect to the MIDI input 
+# and use the received notes to generate a 
+# continuation
+
 import mido
 
 # Set the backend to use 'portmidi'

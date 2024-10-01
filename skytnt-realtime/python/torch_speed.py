@@ -3,9 +3,9 @@ import torch
 import numpy as np 
 import time
 
-frames = 1024
+frames = 16
 
-ckpt = "/home/matthew/src/ai-music/bcn-2024-system/skytnt-realtime/models/skytnt-pre-trained-la-dataset.ckpt"
+ckpt = "../models/small.ckpt"
 tokenizer = MIDITokenizer()
 
 def load_model(ckpt, device):
