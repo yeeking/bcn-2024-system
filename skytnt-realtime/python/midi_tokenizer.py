@@ -69,6 +69,7 @@ class MIDITokenizer:
                             event_list.pop(last_note_key)
                     last_notes[cp] = (key, new_event)
                 event_list[key] = new_event
+                print(f"Tokenized event {new_event}")
         event_list = list(event_list.values())
         event_list = sorted(event_list, key=lambda e: e[1:4])
         midi_seq = []
@@ -133,6 +134,7 @@ class MIDITokenizer:
                     event[4] = self.bpm2tempo(event[4])
                 if event[0] == "note":
                     event[4] = int(event[4] * ticks_per_beat / 16)
+                print(f"Detokenizd event: {event}")
                 t1 += event[1]
                 t = t1 * 16 + event[2]
                 t = int(t * ticks_per_beat / 16)

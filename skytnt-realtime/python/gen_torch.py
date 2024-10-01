@@ -44,6 +44,7 @@ def generate(model:MIDIModel, tokenizer:MIDITokenizer, prompt=None, max_len=512,
 
     with bar, autocast(enabled=amp):
         while cur_len < max_len:
+            print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
             end = False
             hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
             next_token_seq = None
@@ -81,6 +82,7 @@ def generate(model:MIDIModel, tokenizer:MIDITokenizer, prompt=None, max_len=512,
                 next_token_seq = F.pad(next_token_seq, (0, max_token_seq - next_token_seq.shape[1]),
                                        "constant", value=tokenizer.pad_id)
             next_token_seq = next_token_seq.unsqueeze(1)
+            print(next_token_seq)
             input_tensor = torch.cat([input_tensor, next_token_seq], dim=1)
             cur_len += 1
             bar.update(1)
@@ -129,8 +131,8 @@ def generate_midi_seq(model:MIDIModel, tokenizer:MIDITokenizer, midi_filename, n
     
 
 def run():
-    ckpt = "small.ckpt"
-    ckpt = "/Users/matthewyk/src/ai-music/bcn-2024-system/skytnt-realtime/models/skytnt-pre-trained-la-dataset.ckpt"
+    # ckpt = "small.ckpt"
+    ckpt = "../models/small.ckpt"
     midi_file = 'input.mid'
 
     assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt
@@ -144,7 +146,7 @@ def run():
      
     generate_midi_seq(model, tokenizer, midi_file, 
                       n_events_from_file=128, 
-                      gen_events=128, 
+                      gen_events=1024, 
                       temp=0.7, 
                       top_p=0.5, #0.1 to 1.0
                       top_k=1, #1 to 20 
