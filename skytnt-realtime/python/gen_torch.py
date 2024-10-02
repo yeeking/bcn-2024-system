@@ -44,7 +44,7 @@ def generate(model:MIDIModel, tokenizer:MIDITokenizer, prompt=None, max_len=512,
 
     with bar, autocast(enabled=amp):
         while cur_len < max_len:
-            print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
+            # print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
             end = False
             hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
             next_token_seq = None
@@ -82,7 +82,7 @@ def generate(model:MIDIModel, tokenizer:MIDITokenizer, prompt=None, max_len=512,
                 next_token_seq = F.pad(next_token_seq, (0, max_token_seq - next_token_seq.shape[1]),
                                        "constant", value=tokenizer.pad_id)
             next_token_seq = next_token_seq.unsqueeze(1)
-            print(next_token_seq)
+            # print(next_token_seq)
             input_tensor = torch.cat([input_tensor, next_token_seq], dim=1)
             cur_len += 1
             bar.update(1)
@@ -140,7 +140,7 @@ def run():
     print(f"Generating from file {midi_file} with ckpt {ckpt}")
 
     tokenizer = MIDITokenizer()
-    model = MIDIModel(tokenizer).to(device='cpu')
+    model = MIDIModel(tokenizer).to(device='cuda')
     load_model(ckpt, model)
     print(model)
      

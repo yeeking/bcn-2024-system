@@ -1,14 +1,79 @@
 # Notes on building Barcelona system
 
-## 01/10/2024
+# 01/10/2024
 
-### Back to realtime gen
+## runtime for the model
 
-Today's main task: format incoming MIDI messages to score format, as that is what the tokenized wants. First:
+Start by collecting notes from the player and using them to fill up slots a fixed size vector
+[n1 -- props, n2 --- props, n3 --- props]
 
-* Check if the generator code is autoregressive. If so, means I am ready to be mixing in extra events to the context as it goes. How to do that? Look for multiple calls to model forward in the generator script with a longer length of output requested. 
+Each time a note comes in, we put it in the vector at a new slot. Once it is full, wrap around t othe start and start overwriting. 
 
-I have details of the score format
+In a separate thread, on a regular clock, send the vector into the model. Ensure it has blanks at the start. Read the output of the model. 
+
+Take the output of the model and send that out for MIDI playback straight away
+Also add the output into the slots of the vector. If 
+
+On a regular clock ? we send that frame to the model. Probably, depending on how fast it can run. 
+
+Model generates output. 
+
+
+
+### Conclusion about input and output to the tokenizer
+
+#### input 
+Start time in ticks:
+
+Assuming you have offset_in_seconds, bpm (sent as set_tempo message), ticks_per_beat (set as the first message in every frame you send to the model)
+ 
+```
+offset_in_ticks = (offset_in_seconds / (60/bpm)) * ticks_per_beat 
+```
+Duration in ticks: 
+```
+duration_in_ticks = duration_in_seconds * (60/bpm) * ticks_per_beat 
+```
+Gives you:
+```
+['note', offset_in_ticks, duration_in_ticks, channel, note, velocity]
+```
+
+So a complete frame of notes would be:
+
+```
+[ticks_per_beat, 
+[["set_tempo", tempo in microseconds per quarter note]], 
+[["note", offset_in_ticks, duration_in_ticks, channel, note, velocity ]]
+]
+```
+
+tempo in microseconds per quarter note = 60,000,000 / bpm
+
+#### sending it to the model
+Once you have:
+```
+["note", offset_in_ticks, duration_in_ticks, channel, note, velocity ]
+```
+You can pass it to the tokenizer then into the model. But... you want to provide the model with a decent context, not just one frame. So you need to gather a frame of notes then pass that to the model. 
+
+What I'm not sure about is what to put in the frame. You could wait for 2 seconds then send it to get another 2 seconds. But what if you only get one event - you are only giving it one event of context, but what about all the silence? The model doesn't model silence or does it pad with empty slots up to a fixed size? It must do! 
+
+
+
+#### output 
+
+Then coming out of the model we get:
+
+```
+#[type, bar_offset_from_now, beat_offset_in_bar, track_id, duration, channel, note, velocity]
+
+```
+which in order to play it, you want to convert to:
+
+```
+#[type, seconds_offset, track_id, duration, channel, note, velocity]
+```
 
 ### Moving on from coreml for now
 
@@ -21,6 +86,110 @@ Progress made on coreml yesterday:
 * I nearly completed a C++ project that loads in two separate models (tokenizer and base model) like the app_onnx python example and passes data from one to the other. Perhaps complete this, then switch back to live MIDI input?
 
 -> do a quick sanity check: how fast does the inference go on my 2070? Ok Then back to live MIDI if that'll work.'. Did that. coreml vs. torch on mac mini is 4x boost. cpu vs cuda on 2070 is 6x boost. Both good for realtime generation. 
+
+
+### Back to realtime gen
+
+Today's main task: format incoming MIDI messages to score format, as that is what the tokenized wants. First:
+
+* Check if the generator code is autoregressive. If so, means I am ready to be mixing in extra events to the context as it goes. How to do that? Look for multiple calls to model forward in the generator script with a longer length of output requested. Done. It calls it for each frame. But what is the input?
+
+* Investigated the impact of the input frame on the generation. The torch models allow for a flexible input length, up to the max 'context' of 2048+. If you feed it 2048 as an input (that is some minutes of piano playing) then it trims it to 2048 and does that. On the 2070, feeding it 2048 slows it to 2 events a second. 
+
+### Timing
+
+Does the model produce events in the past of previous earliest event? Check start times on events. This would be a problem! So:
+  - of the tokenised events coming out of the model, do any of them appear earlier than any of the previous notes. 
+  - keep a tally of onset times
+  - each time a new onset time comes out of the model check if it is earlier than any of the previous onset times. 
+
+Ok - time values coming out of the model come in as deltas on the current time point. They are converted into absolute offsets within the generated frame like this:
+
+```
+# key
+#[type, bar_offset,beat_offset_in_bar, track_id, duration, channel, note, velocity]
+
+['note', 0, 11, 0, 1020, 0, 55, 41]
+Global offset 0 event offset 0 Time raw: 11 into 330
+['note', 0, 11, 0, 1110, 0, 43, 40]
+Global offset 0 event offset 0 Time raw: 11 into 330
+['note', 0, 11, 0, 1110, 0, 59, 48]
+Global offset 0 event offset 0 Time raw: 11 into 330
+['note', 2, 12, 0, 900, 0, 60, 53]  ### Step forward two steps in time
+Global offset 2 event offset 2 Time raw: 12 into 1320
+['note', 0, 13, 0, 780, 0, 55, 43]
+Global offset 2 event offset 0 Time raw: 13 into 1350
+['note', 0, 13, 0, 870, 0, 45, 43]
+Global offset 2 event offset 0 Time raw: 13 into 1350
+---
+['note', 0, 0, 0, 750, 0, 48, 45]
+Global offset 88 event offset 0 Time raw: 0 into 42240
+['note', 0, 0, 0, 750, 0, 64, 56]
+Global offset 88 event offset 0 Time raw: 0 into 42240
+['note', 0, 11, 0, 300, 0, 66, 56]
+Global offset 88 event offset 0 Time raw: 11 into 42570
+['note', 1, 5, 0, 300, 0, 67, 56]
+Global offset 89 event offset 1 Time raw: 5 into 42870
+```
+
+Ok that's all clear - no stepping back in time, Just events happening either now or in the future come out of the model, where the time is an accumulation of event[1] values.
+
+So I think I could tokenise output from the model
+
+### Passing events into the model
+
+Next question - how do we convert incoming MIDI data for the model?
+
+The following shows what the midi tokenizer does to 'MIDI.score' formatted note data. 
+
+```
+['patch_change', 0, 0, 0] #input  
+['patch_change', 0, 0, 0, 0, 0]#output
+['note', 155, 465, 0, 55, 41] #input in score format ['note', start_time, duration, channel, note, velocity] 
+['note', 0, 11, 0, 34, 0, 55, 41]#output ready for mode 
+['note', 155, 507, 0, 43, 40] #input 
+['note', 0, 11, 0, 37, 0, 43, 40]#output - for the model
+['note', 155, 507, 0, 59, 48] #input 
+['note', 0, 11, 0, 37, 0, 59, 48]#output
+['note', 620, 352, 0, 55, 43] #input 
+['note', 2, 13, 0, 26, 0, 55, 43]#output
+['note', 620, 394, 0, 45, 43] #input 
+['note', 2, 13, 0, 29, 0, 45, 43]#output
+['note', 605, 409, 0, 60, 53] #input 
+['note', 2, 12, 0, 30, 0, 60, 53]#output
+['note', 972, 520, 0, 55, 38] #input 
+['note', 4, 7, 0, 38, 0, 55, 38]#output
+['note', 972, 563, 0, 47, 37] #input 
+['note', 4, 7, 0, 41, 0, 47, 37]#output
+
+```
+
+```
+event is: 
+['note', start_time, duration, channel, note, velocity]
+new_event is:
+t = round(16 * event[1] / ticks_per_beat) ## i.e. adjusted start_time
+[event[0], t // 16, t % 16, track_idx] + event[2:]
+where
+
+[type, bar_offset,beat_offset_in_bar, track_id, duration, channel, note, velocity]
+```
+
+Right so the event data sent into the tokenizer uses ticks for the start_time.
+
+The absolute length of a tick in seconds depends on the BPM of the piece and the ticks per beat. 
+
+E.g. if BPM is 120, one beat lasts 60/120 s == 0.5 seconds
+if ticks per beat is 500, one tick lasts 0.5 / 500 seconds or 0.001 seconds probably
+
+So if you have tick of 2568, just multiply that by the length of a tick to get the offset in seconds. Say you are capturing frames of MIDI from a live performer:
+
+start time [frame] end time 
+
+you want to convert the times in the frame into ticks. You are just receiving MIDI whenever - there is no MIDI clock here. 
+
+So, choose a ticks per beat value at the start, make sure you send that with the data, also maybe send a set_tempo message
+then for each offset in seconds in the frame, convert it to ticks using your chosen ticks per beat value and your chosen tempo. 
 
 
 
