@@ -1,5 +1,11 @@
 # Notes on building Barcelona system
 
+# 02/10/2024
+
+## Expressing the runtime as an ImproviserAgent class. 
+
+MIDI Callbacks are an issue. We specify a callback function that gets called when MIDI is received but if that callback function is a non-static member of a class, then how do we ensure that the instance object's state (self) is available to that callback? Probably we cannot, so we have to rely on global scope objects in the callback, presumbly. 
+
 # 01/10/2024
 
 ## runtime for the model
