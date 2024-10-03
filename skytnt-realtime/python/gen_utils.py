@@ -46,9 +46,10 @@ def generate(model:MIDIModel, tokenizer:MIDITokenizer, prompt=None, max_len=512,
     else:
         autocast = torch.cpu.amp.autocast  # Use CPU autocast for CPU
 
+    print(f"Entering model forard call loop. in tensor shape: {input_tensor.shape}")
     with bar, autocast(enabled=amp):
         while cur_len < max_len:
-            # print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
+            print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
             end = False
             hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
             next_token_seq = None
@@ -109,6 +110,7 @@ def generate_midi_seq(model:MIDIModel, tokenizer:MIDITokenizer, score_format_inp
     tokens = tokenizer.tokenize(score_format_input)
 
     mid = np.asarray(tokens, dtype=np.int64)
+    print(f"Final midi format for model. Shape: {mid.shape}")
     # mid = mid[:int(max_input_len)] # if want to use a subset of the inputs 
 
     ## this bit adds the input sequence to the start of the output sequence
@@ -122,6 +124,7 @@ def generate_midi_seq(model:MIDIModel, tokenizer:MIDITokenizer, score_format_inp
                         disable_patch_change=disable_patch_change, disable_control_change=not allow_cc,
                         disable_channels=disable_channels, amp=amp)
     for i, token_seq in enumerate(generator):
+        print(f"Gen step {i} of {len(token_seq)}")
         mid_seq.append(token_seq)
         ## this bit is for outputting as you generate ... might be useful! 
         # event = tokenizer.tokens2event(token_seq.tolist())
@@ -148,6 +151,15 @@ class RingBuffer:
         with self.lock:
             return list(self.array)
     
+    def isFull(self):
+        """
+        return true if the index is pointing to the last position
+        """
+        if self.index == len(self.array) - 1:
+            return True
+        else:
+            return False
+        
     def reset(self):
         with self.lock:
             self.index = 0
@@ -247,14 +259,15 @@ class MidoWrapper():
 
 
 class ImproviserAgent():
-    def __init__(self, model:MIDIModel, tokenizer:MIDITokenizer):
+    def __init__(self, memory_length:int, model:MIDIModel, tokenizer:MIDITokenizer):
         self.midoWrapper = MidoWrapper(self.receiveMIDI)
-        self.noteBuffer = RingBuffer(8)
+        self.noteBuffer = RingBuffer(memory_length)
         self.start_time_s = time.time()
         self.bpm = 120 # not sure what to do with this one! 
         self.ticks_per_beat = 480 # 96 is a typical old-skool MIDI file tpb. 480 is more modern.
         self.setModel(model)
         self.tokenizer = tokenizer
+        self.lock = threading.Lock()
         
     def setModel(self, model:midi_model.MIDIModel):
         self.model = model 
@@ -262,7 +275,7 @@ class ImproviserAgent():
     def initMIDI(self):
         self.midoWrapper.initMIDI()
         self.midoWrapper.start()
-        
+
 
     def receiveMIDI(self, msg:mido.Message):
         if msg.type == "note_on":
@@ -274,12 +287,17 @@ class ImproviserAgent():
             offset_in_ticks = (offset_secs / (60/self.bpm)) * self.ticks_per_beat
             event = ['note', int(offset_in_ticks), self.ticks_per_beat, 0, msg.note, msg.velocity]
             self.noteBuffer.addEvent(event)
+            if self.noteBuffer.isFull():# generate when the buffer is full
+                self.generate()
 
 
     def analyse_output(self, output):
         """
         print some info about the de-tokenized output of the model
         """
+        if len(output) < 2:
+            print(f"Bad output {output}")
+            return 
         tpb = output[0]
         ch_count = len(output) - 1 # first entry is not a channel it is tpb
         ch1_events = len(output[1])
@@ -294,27 +312,31 @@ class ImproviserAgent():
         a score format event list as in MIDI.py score 
         then tokenize it and send it to the model 
         """
-        print(f"Generating improvisation... {self.noteBuffer.array}")
+        with self.lock:
         # remove 'None' type events and pre-pend ticks per beat
         # note that I call copy.copy as the underlying lists might get modified 
         # by incoming midi events on a separate thread.
-        good_events = [copy.copy(e) for e in self.noteBuffer.array if e != None]
-        print(good_events)
-        if len(good_events) == 0:
-            print("No context yet...")
-            return 
-        print("Here goes nothing")
-        good_events = [self.ticks_per_beat] + [good_events]
-        gen_events = generate_midi_seq(self.model, tokenizer, 
-                      good_events,
-                      gen_events=64, 
-                      temp=0.7, 
-                      top_p=0.5, #0.1 to 1.0
-                      top_k=1, #1 to 20 
-                      allow_cc=False, # True or False
-                      amp=True) # True or False
-        self.analyse_output(gen_events)
-        # now can generate some data
+            input_events = [copy.copy(e) for e in self.noteBuffer.array if e != None]
+            if len(input_events) == 0:
+                print("No context yet...")
+                return  
+            # now reset the ring buffer so we can capture more events whilst they continue to play
+            self.noteBuffer.reset()
+            # and reset the start time for the events we will now capture 
+            self.start_time_s = time.time() # reset start time for next frame 
+            print(f"Sending {len(input_events)} to the model")
+            input_events = [self.ticks_per_beat] + [input_events]
+            # output_events = self.generate(input_events)
+            gen_events = generate_midi_seq(self.model, tokenizer, 
+                        input_events,
+                        gen_events=self.noteBuffer.size, 
+                        temp=0.7, 
+                        top_p=0.5, #0.1 to 1.0
+                        top_k=1, #1 to 20 
+                        allow_cc=False, # True or False
+                        amp=True) # True or False
+            # now can generate some data
+            return gen_events
 
         
     def run(self):
@@ -322,10 +344,7 @@ class ImproviserAgent():
         def thread_function():
             while True:
                 time.sleep(5)  # Wait for note collection
-                self.generate()  # Call the generate function after waiting
-                self.start_time_s = time.time() # reset start time for next frame 
-                self.noteBuffer.reset()
-
+                self.generate() # try to generate every x seconds regardless of what has come in    
         # Start a new thread to run the thread_function
         thread = threading.Thread(target=thread_function)
         thread.start()
@@ -343,7 +362,7 @@ if __name__ == "__main__":
     load_model(ckpt, model)
     print(model)
 
-    improviser = ImproviserAgent(model, tokenizer) 
+    improviser = ImproviserAgent(memory_length=128, model=model, tokenizer=tokenizer) 
     improviser.initMIDI()
     improviser.run()
 # improviserGlobal.initMIDI()
