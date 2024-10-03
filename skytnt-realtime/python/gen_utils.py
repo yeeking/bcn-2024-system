@@ -4,7 +4,6 @@ import midi_tokenizer
 import midi_model
 import time 
 
-
 class RingBuffer:
     """
     circular / ring buffer
@@ -69,7 +68,6 @@ def gen_runtime():
             messages = generate_sequence(model,tokenizer,context_len,buffer)
             # schedule the messages to send ...
             
-
 class MidoWrapper():
     def __init__(self, midiCallback):
         self.midiCallback = midiCallback
@@ -86,18 +84,31 @@ class MidoWrapper():
         assert (device_index >= 0) and (device_index < len(midi_devices)), "Invalid MIDI device chosen"
         selected_device = midi_devices[device_index]
         print(f"Connecting to: {selected_device} callback {self.midiCallback}")
-        with mido.open_input(selected_device, callback=self.midiCallback) as inport:
-            print(f"Listening for messages from {selected_device}...")
-            try:
-                # Wait for MIDI messages to come in via callback
-                input("Press Enter to stop listening...\n")
-            except KeyboardInterrupt:
-                print("MIDI listener stopped.")
 
+        def midi_thread_function():
+            with mido.open_input(selected_device, callback=self.midiCallback) as inport:
+                input("MIDI open! Press Enter to stop listening...\n")
+
+        # Start a new thread to run the thread_function
+        thread = threading.Thread(target=midi_thread_function)
+        thread.start()
+
+
+        # with mido.open_input(selected_device, callback=self.midiCallback) as inport:
+        #     print(f"Listening for messages from {selected_device}...")
+        #     try:
+        #         # Wait for MIDI messages to come in via callback
+        #         input("Press Enter to stop listening...\n")
+        #     except KeyboardInterrupt:
+        #         print("MIDI listener stopped.")
 
 class ImproviserAgent():
     def __init__(self):
         self.midoWrapper = MidoWrapper(self.receiveMIDI)
+        self.noteBuffer = RingBuffer(8)
+        self.start_time_s = time.time()
+        self.bpm = 120 # not sure what to do with this one! 
+        self.ticks_per_beat = 96 # 96 is a typical old-skool MIDI file tpb. 480 is more modern.
         
     def setModel(self, model:midi_model.MIDIModel):
         self.model = model 
@@ -105,13 +116,33 @@ class ImproviserAgent():
     def initMIDI(self):
         self.midoWrapper.initMIDI()
 
-
-
     def receiveMIDI(self, msg:mido.Message):
-        print(f"ImproviserAgent receiveMIDI MIDI {msg}")
+        if msg.type == "note_on":
+            print(f"ImproviserAgent receiveMIDI note on {msg}")
+            # ['note', start_time, duration, channel, note, velocity]
+            # ["note", offset_in_ticks, duration_in_ticks, channel, note, velocity ]
+            # time since the start of this generation cycle 
+            offset_secs = time.time() - self.start_time_s
+            offset_in_ticks = (offset_secs / (60/self.bpm)) * self.ticks_per_beat
+            event = ['note', offset_in_ticks, self.ticks_per_beat, 0, msg.note, msg.velocity]
+            self.noteBuffer.addEvent(event)
 
+    def generate(self):
+        print(f"Generating improvisation... {self.noteBuffer.array}")
+
+    def run(self):
+        # Define the function that will run in the thread
+        def thread_function():
+            while True:
+                time.sleep(1)  # Wait for 5 seconds
+                self.generate()  # Call the generate function after waiting
+
+        # Start a new thread to run the thread_function
+        thread = threading.Thread(target=thread_function)
+        thread.start()
 
 improviser = ImproviserAgent() 
 improviser.initMIDI()
+improviser.run()
 # improviserGlobal.initMIDI()
 
