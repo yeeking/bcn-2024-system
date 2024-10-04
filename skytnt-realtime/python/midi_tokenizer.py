@@ -57,6 +57,10 @@ class MIDITokenizer:
                     new_event[4] = int(self.tempo2bpm(new_event[4]))
                 if event[0] == "note":
                     key = tuple(new_event[:4] + new_event[5:-1])
+                    if key in event_list:
+                        if new_event[-1] != 0:# allow non zero vel notes to override zero vel notes which are bad
+                            event_list[key] = new_event
+                            # print("zero note overridden")
                 else:
                     key = tuple(new_event[:-1])
                 if event[0] == "note":  # to eliminate note overlap due to quantization

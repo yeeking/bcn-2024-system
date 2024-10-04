@@ -1,10 +1,42 @@
 # Notes on building Barcelona system
 
-# 02/10/2024
+# 04/10/2024
+
+Analysing the tokenizer removing notes problem.
+
+Here is the input and output format for the tokenizer:
+```
+['note', 155, 465, 0, 55, 41] #input in score format ['note', start_time, duration, channel, note, velocity] 
+['note', 0, 11, 0, 34, 0, 55, 41]#output ready for model
+```
+
+Then looking at the duplicates 
+
+```
+['note', 6, 11, 0, 16, 0, 60, 0] # this is the input
+('note', 6, 11, 0, 0, 60)  # this is the lookup key
+['note', 6, 11, 0, 16, 0, 60, 39] # this is the pre-existing item with that key.
+```
+
+The last digit of the 'matching' item is not the same. That appears to be the velocity, so according to this, I am sending it the same note at the same time but with a zero velocity and it is filtering it out. That makes sense as a filter, but why am i sending zero velocity notes? 
+
+In the end, I did not really work out why reaper was sending zero velocity note ons, but my midi keyboard does not do that, so I am assuming it is something odd in the MIDI files I am playing out of Reaper. I made the tokenizer replace zero velocity note ons with > 0 ones if they come in at the same time with the same note. 
+
+Next step: deal with MIDI note offs and correct note durations? Or try to play the output of the model right now? 
+
+- midi note offs: I'll need a stateful midistate thing that tells me when note offs come in. Like I had in the C++ improviser in the end. 
+
+
+# 03/10/2024
 
 ## Expressing the runtime as an ImproviserAgent class. 
 
 MIDI Callbacks are an issue. We specify a callback function that gets called when MIDI is received but if that callback function is a non-static member of a class, then how do we ensure that the instance object's state (self) is available to that callback? Probably we cannot, so we have to rely on global scope objects in the callback, presumbly. 
+
+## Completed today:
+
+* Got a basic improviser working with MIDI I/O, ring buffered MIDI memory and sending MIDI data to tokenizer, then to the model. Cool!
+* TODO: work out why the tokenizer is rejecting some of the MIDI data from the buffer with its key setting, i.e. why do different MIDI events get the same key? Possibly to do with the time stamps being the same for same notes or something. Check! 
 
 # 01/10/2024
 
