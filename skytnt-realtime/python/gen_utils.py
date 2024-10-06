@@ -234,6 +234,7 @@ class ImproviserAgent():
         """
         actually sends the input to the model and prepares the output 
         """
+        print(f"infer max len {max_len}")
         if disable_channels is not None:
             disable_channels = [tokenizer.parameter_ids["channel"][c] for c in disable_channels]
         else:
@@ -255,13 +256,13 @@ class ImproviserAgent():
         else:
             autocast = torch.cpu.amp.autocast  # Use CPU autocast for CPU
 
-        print(f"Entering model forard call loop. in tensor shape: {input_tensor.shape}")
-        
+        print(f"Entering model forard call loop. in tensor shape: {input_tensor.shape} max len {max_len}")
         bar = tqdm.tqdm(desc="generating", total=max_len - cur_len)
         with bar, autocast(enabled=amp):
         # with autocast(enabled=amp):
-            while cur_len < max_len:
-                # print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
+            # while cur_len < max_len: 
+            for i in range(0, max_len): # ensure we get the full length output
+                print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
                 end = False
                 hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
                 next_token_seq = None
@@ -310,15 +311,15 @@ class ImproviserAgent():
 
 
 
-    def generate_midi_seq(self, model:MIDIModel, tokenizer:MIDITokenizer, score_format_input, gen_events, temp, top_p, top_k, allow_cc, amp, use_model=True):
+    def generate_midi_seq(self, model:MIDIModel, tokenizer:MIDITokenizer, score_format_input, output_len, temp, top_p, top_k, allow_cc, amp, use_model=True):
         """
         controller function for inference. Takes score format input, prepares it then sends it over to the model
         It is possible I can cut this one out and just go straight to the infer function 
         """
+        print("generate_mid_seq")
         # prepare variables
         mid_seq = []
-        gen_events = int(gen_events)
-        max_len = gen_events
+        max_len = int(output_len)
         disable_patch_change = False
         disable_channels = None
 
@@ -330,7 +331,7 @@ class ImproviserAgent():
 
         if use_model == False: # give up here...
             return 
-        
+        print(f"Calling infer with max len {max_len}")
         generator = self.infer(model, tokenizer, mid, max_len=max_len, 
                             temp=temp, top_p=top_p, top_k=top_k,
                             disable_patch_change=disable_patch_change, disable_control_change=not allow_cc,
@@ -352,33 +353,36 @@ class ImproviserAgent():
         """
         if self.lock.acquire(blocking=False):
             gen_events = None
-            try:
-                # Critical section that should be thread-safe
-                print("Generating improvisation...")
-                input_events = [copy.copy(e) for e in self.noteBuffer.array if e != None]
-                if len(input_events) == 0:
-                    print("No context yet...")
-                    return  
-                # now reset the ring buffer so we can capture more events whilst they continue to play
-                self.noteBuffer.reset()
-                # and reset the start time for the events we will now capture 
-                self.start_time_s = time.time() # reset start time for next frame 
-                print(f"Sending {len(input_events)} to the model")
-                input_events = [self.ticks_per_beat] + [input_events]
-                # output_events = self.generate(input_events)
-                gen_events = self.generate_midi_seq(self.model, self.tokenizer, 
-                            input_events,
-                            gen_events=self.noteBuffer.size, 
-                            temp=0.7, 
-                            top_p=0.5, #0.1 to 1.0
-                            top_k=1, #1 to 20 
-                            allow_cc=False, # True or False
-                            amp=True, use_model=(self.test_mode == False)) # True or False               
-            finally:
-                # Release the lock after completion
-                self.lock.release()
-                print("Generation complete.") 
-                return gen_events
+            # try:
+            # Critical section that should be thread-safe
+            print("Generating improvisation...")
+            input_events = [copy.copy(e) for e in self.noteBuffer.array if e != None]
+            if len(input_events) == 0:
+                print("No context yet...")
+                return  
+            # now reset the ring buffer so we can capture more events whilst they continue to play
+            self.noteBuffer.reset()
+            # and reset the start time for the events we will now capture 
+            self.start_time_s = time.time() # reset start time for next frame 
+            print(f"Sending {len(input_events)} to the model")
+            input_events = [self.ticks_per_beat] + [input_events]
+            # output_events = self.generate(input_events)
+            gen_events = self.generate_midi_seq(self.model, self.tokenizer, 
+                        input_events,
+                        output_len=self.noteBuffer.size, # generate as much as we give you
+                        temp=0.7, 
+                        top_p=0.5, #0.1 to 1.0
+                        top_k=1, #1 to 20 
+                        allow_cc=False, # True or False
+                        amp=True, use_model=(self.test_mode == False)) # True or False  
+        
+            self.lock.release()
+        
+        #     finally:
+        #         # Release the lock after completion
+        #         self.lock.release()
+        #         print("Generation complete.") 
+        #         return gen_events
         else:
             # Lock is already acquired, reject the call
             print("Generate is already running, rejecting call.")
