@@ -9,16 +9,142 @@ from midi_model import MIDIModel, MIDITokenizer
 import tqdm
 import os
 import copy 
+import heapq
+from collections import defaultdict
 
-def load_model(path, model:MIDIModel):
-    """
-    load a python model from the sent checkpoint
-    """
-    ckpt = torch.load(path, map_location="cpu")
-    state_dict = ckpt.get("state_dict", ckpt)
-    model.load_state_dict(state_dict, strict=False)
-    model.eval()
-    return "success"
+
+class ModelHandler:
+    def __init__():
+        pass
+
+
+    def load_model(path, model:MIDIModel):
+        """
+        load a python model from the sent checkpoint
+        """
+        ckpt = torch.load(path, map_location="cpu")
+        state_dict = ckpt.get("state_dict", ckpt)
+        model.load_state_dict(state_dict, strict=False)
+        model.eval()
+        return "success"
+
+
+    @torch.inference_mode()
+    def infer(model:MIDIModel, tokenizer:MIDITokenizer, prompt=None, max_len=512, temp=1.0, top_p=0.98, top_k=20,
+                disable_patch_change=False, disable_control_change=False, disable_channels=None, amp=True):
+        """
+        actually sends the input to the model and prepares the output 
+        """
+        print(f"infer max len {max_len}")
+        if disable_channels is not None:
+            disable_channels = [tokenizer.parameter_ids["channel"][c] for c in disable_channels]
+        else:
+            disable_channels = []
+        max_token_seq = tokenizer.max_token_seq
+        if prompt is None:
+            input_tensor = torch.full((1, max_token_seq), tokenizer.pad_id, dtype=torch.long, device=model.device)
+            input_tensor[0, 0] = tokenizer.bos_id  # bos
+        else:
+            prompt = prompt[:, :max_token_seq]
+            if prompt.shape[-1] < max_token_seq:
+                prompt = np.pad(prompt, ((0, 0), (0, max_token_seq - prompt.shape[-1])),
+                                mode="constant", constant_values=tokenizer.pad_id)
+            input_tensor = torch.from_numpy(prompt).to(dtype=torch.long, device=model.device)
+        input_tensor = input_tensor.unsqueeze(0)
+        cur_len = input_tensor.shape[1]
+        if model.device == 'cuda':
+            autocast = torch.cuda.amp.autocast  # Use CUDA autocast for GPU
+        else:
+            autocast = torch.cpu.amp.autocast  # Use CPU autocast for CPU
+
+        print(f"Entering model forard call loop. in tensor shape: {input_tensor.shape} max len {max_len}")
+        bar = tqdm.tqdm(desc="generating", total=max_len - cur_len)
+        with bar, autocast(enabled=amp):
+        # with autocast(enabled=amp):
+            # while cur_len < max_len: 
+            for i in range(0, max_len): # ensure we get the full length output
+                # print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
+                end = False
+                hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
+                next_token_seq = None
+                event_name = ""
+                for i in range(max_token_seq):
+                    mask = torch.zeros(tokenizer.vocab_size, dtype=torch.int64, device=model.device)
+                    if i == 0:
+                        mask_ids = list(tokenizer.event_ids.values()) + [tokenizer.eos_id]
+                        if disable_patch_change:
+                            mask_ids.remove(tokenizer.event_ids["patch_change"])
+                        if disable_control_change:
+                            mask_ids.remove(tokenizer.event_ids["control_change"])
+                        mask[mask_ids] = 1
+                    else:
+                        param_name = tokenizer.events[event_name][i - 1]
+                        mask_ids = tokenizer.parameter_ids[param_name]
+                        if param_name == "channel":
+                            mask_ids = [i for i in mask_ids if i not in disable_channels]
+                        mask[mask_ids] = 1
+                    logits = model.forward_token(hidden, next_token_seq)[:, -1:]
+                    scores = torch.softmax(logits / temp, dim=-1) * mask
+                    sample = model.sample_top_p_k(scores, top_p, top_k)
+                    if i == 0:
+                        next_token_seq = sample
+                        eid = sample.item()
+                        if eid == tokenizer.eos_id:
+                            end = True
+                            break
+                        event_name = tokenizer.id_events[eid]
+                    else:
+                        next_token_seq = torch.cat([next_token_seq, sample], dim=1)
+                        if len(tokenizer.events[event_name]) == i:
+                            break
+                if next_token_seq.shape[1] < max_token_seq:
+                    next_token_seq = F.pad(next_token_seq, (0, max_token_seq - next_token_seq.shape[1]),
+                                        "constant", value=tokenizer.pad_id)
+                next_token_seq = next_token_seq.unsqueeze(1)
+                # print(next_token_seq)
+                input_tensor = torch.cat([input_tensor, next_token_seq], dim=1)
+                cur_len += 1
+                bar.update(1)
+                yield next_token_seq.reshape(-1).cpu().numpy()
+                if end:
+                    break
+
+
+    def generate_midi_seq(model:MIDIModel, tokenizer:MIDITokenizer, score_format_input, output_len, temp, top_p, top_k, allow_cc, amp, use_model=True):
+        """
+        controller function for inference. Takes score format input, prepares it then sends it over to the model
+        It is possible I can cut this one out and just go straight to the infer function 
+        returns data in the format produced by MidiTokenizer.detokenize, which is 'score' format 
+        """
+        print("generate_mid_seq")
+        # prepare variables
+        mid_seq = []
+        max_len = int(output_len)
+        disable_patch_change = False
+        disable_channels = None
+
+        tokens = tokenizer.tokenize(score_format_input)
+
+        mid = np.asarray(tokens, dtype=np.int64)
+        print(f"Final midi format for model. Shape: {mid.shape}")
+        # mid = mid[:int(max_input_len)] # if want to use a subset of the inputs 
+
+        if use_model == False: # give up here...
+            return 
+        print(f"Calling infer with max len {max_len}")
+        generator = ModelHandler.infer(model, tokenizer, mid, max_len=max_len, 
+                            temp=temp, top_p=top_p, top_k=top_k,
+                            disable_patch_change=disable_patch_change, disable_control_change=not allow_cc,
+                            disable_channels=disable_channels, amp=amp)
+        for i, token_seq in enumerate(generator):
+            # print(f"Gen step {i} of {len(token_seq)}")
+            mid_seq.append(token_seq)
+            ## this bit is for outputting as you generate ... might be useful! 
+            # event = tokenizer.tokens2event(token_seq.tolist())
+
+        score_format_data = tokenizer.detokenize(mid_seq)
+        return score_format_data
+
 
 
 class MIDINoteState:
@@ -88,7 +214,7 @@ class RingBuffer:
             self.index = 0
             self.array = [None] * self.size
 
-class MidoWrapper():
+class MidiDeviceHandler():
     def __init__(self, midiCallback):
         assert midiCallback is not None, "MidoWrapper: You need to pass a callback"
         self.midiCallback = midiCallback
@@ -130,7 +256,7 @@ class MidoWrapper():
                 while not self.stop_event.is_set():  
                     time.sleep(1)  # Keeps the thread running
 
-            print("MIDI input possibly closing")
+            print("MIDI input closing")
 
         def midi_output_thread_function():
             # Open MIDI output
@@ -141,7 +267,8 @@ class MidoWrapper():
                 # Keep the thread alive to allow sending messages
                 while not self.stop_event.is_set():  
                     time.sleep(1)  # Keeps the thread running
-            print("MIDI output possibly closing")
+            print("MIDI output closing")
+            print("Now wait for the generation to complete and I will shut down")
 
 
         # Start MIDI input thread
@@ -160,18 +287,71 @@ class MidoWrapper():
         with self.output_lock:
             if self.output_port:
                 self.output_port.send(message)
-                print(f"Sent MIDI message: {message}")
+                print(f"MIDI HANDLER Sent MIDI message: {message}")
             else:
-                print("MIDI output port is not initialized.")
+                print("MIDI HANDLER MIDI output port is not initialized.")
         
     def stop(self):
         print("Stopping MIDI I/O...")
         self.stop_event.set()  # Signal all threads to stop
 
 
+class MIDIScheduler:
+    def __init__(self, midiHandler:MidiDeviceHandler):
+        self.message_queue = []  # Priority queue (min-heap) for (time, msg) tuples
+        self.queue_lock = threading.Lock()  # To ensure thread safety for the queue
+        self.send_lock = threading.Lock()   # To ensure thread safety for sending MIDI
+        self.running = True
+        self.thread = threading.Thread(target=self._clock_thread, daemon=True)
+        self.thread.start()
+        self.midiHandler = midiHandler
+
+    def addMIDIMsg(self, msg, delay_ms):
+        """Adds a MIDI message with a delay to the scheduler."""
+        send_time = time.time() * 1000 + delay_ms  # Calculate absolute send time in ms
+        with self.queue_lock:
+            heapq.heappush(self.message_queue, (send_time, msg))
+
+    def _clock_thread(self):
+        """Background thread to regularly check and send MIDI messages."""
+        while self.running:
+            current_time = time.time() * 1000  # Current time in milliseconds
+            to_send = []
+            with self.queue_lock:
+                # Collect all messages whose time is less than or equal to the current time
+                while self.message_queue and self.message_queue[0][0] <= current_time:
+                    send_time, msg = heapq.heappop(self.message_queue)
+                    to_send.append(msg)
+
+            # Send messages outside the queue lock to avoid blocking it
+            if to_send:
+                self._send_midi_messages(to_send)
+
+            # Sleep for a short time to ensure high clock accuracy
+            time.sleep(0.001)
+
+    def _send_midi_messages(self, messages):
+        """Thread-safe method to send MIDI messages."""
+        with self.send_lock:
+            for msg in messages:
+                self.sendMIDI(msg)
+
+    def sendMIDI(self, msg):
+        """Sends the MIDI message (you can replace this with actual sending logic)."""
+        # Placeholder for actual MIDI sending code, e.g., using mido
+        print(f"MIDI Q: Sending MIDI message: {msg}")
+        self.midiHandler.sendMIDI(msg)
+
+
+    def stop(self):
+        """Stops the scheduler and the background thread."""
+        self.running = False
+        self.thread.join()
+
+
 class ImproviserAgent():
     def __init__(self, memory_length:int, model:MIDIModel, tokenizer:MIDITokenizer, test_mode=False):
-        self.midoWrapper = MidoWrapper(self.receiveMIDI)
+        self.midiHandler = MidiDeviceHandler(self.receiveMIDI)
         self.noteBuffer = RingBuffer(memory_length)
         self.start_time_s = time.time()
         self.bpm = 120 # not sure what to do with this one! 
@@ -182,6 +362,8 @@ class ImproviserAgent():
         self.stop_event = threading.Event()  # 
         self.test_mode = test_mode
         self.midiNoteState = MIDINoteState()
+        self.midiQ = MIDIScheduler(self.midiHandler)
+        
         
     def setModel(self, model:midi_model.MIDIModel):
         self.model = model 
@@ -192,8 +374,8 @@ class ImproviserAgent():
         the two threads controlling them so you can control
         threads outside this function 
         """
-        self.midoWrapper.getMIDIDevicesFromUser()
-        return self.midoWrapper.initMIDI()
+        self.midiHandler.getMIDIDevicesFromUser()
+        return self.midiHandler.initMIDI()
         
     def receiveMIDI(self, msg:mido.Message):
         offset_secs = time.time() - self.start_time_s
@@ -211,6 +393,28 @@ class ImproviserAgent():
             # if self.noteBuffer.isFull():# generate when the buffer is full
             #     self.generate()
 
+    def sendMIDI(self, msg):
+        """
+        assumes message format  ['note', start_time, duration, channel, note, velocity] 
+        """
+        # print("Sending a midi message", msg)
+        if msg[0] is not 'note': return 
+        assert len(msg) == 6, "sendMIDI received bad message " + str(msg)
+        note = msg[4]
+        vel = msg[5]
+        start = msg[1]
+        dur = msg[2]
+
+        # work out the time delta in ms
+        beat_offset = start / self.ticks_per_beat # in beats
+        note_on_offset_s = 60.0 / self.bpm * beat_offset
+        note_off_offset_s = note_on_offset_s + (60.0 / self.bpm * dur)
+        
+        onMsg = mido.Message('note_on', note=note, velocity=vel)
+        offMsg = mido.Message('note_off', note=note, velocity=vel)
+        
+        self.midiQ.addMIDIMsg(onMsg, note_on_offset_s * 1000)
+        self.midiQ.addMIDIMsg(offMsg, note_off_offset_s * 1000)
 
     def analyse_output(self, output):
         """
@@ -223,166 +427,51 @@ class ImproviserAgent():
         ch_count = len(output) - 1 # first entry is not a channel it is tpb
         ch1_events = len(output[1])
         beat_offsets = [round(eve[1]/tpb, 2) for eve in output[1] if eve[0] == 'note']
-
-        print(f"Received {ch_count} channels on ch1 {ch1_events} notes, tpb: {tpb} offsets {beat_offsets}")
+        print(f"analyse_output: chans {ch_count} ch1 events {ch1_events} tpb {tpb} beats {beat_offsets}")
+  
         
-
-
-    @torch.inference_mode()
-    def infer(self, model:MIDIModel, tokenizer:MIDITokenizer, prompt=None, max_len=512, temp=1.0, top_p=0.98, top_k=20,
-                disable_patch_change=False, disable_control_change=False, disable_channels=None, amp=True):
-        """
-        actually sends the input to the model and prepares the output 
-        """
-        print(f"infer max len {max_len}")
-        if disable_channels is not None:
-            disable_channels = [tokenizer.parameter_ids["channel"][c] for c in disable_channels]
-        else:
-            disable_channels = []
-        max_token_seq = tokenizer.max_token_seq
-        if prompt is None:
-            input_tensor = torch.full((1, max_token_seq), tokenizer.pad_id, dtype=torch.long, device=model.device)
-            input_tensor[0, 0] = tokenizer.bos_id  # bos
-        else:
-            prompt = prompt[:, :max_token_seq]
-            if prompt.shape[-1] < max_token_seq:
-                prompt = np.pad(prompt, ((0, 0), (0, max_token_seq - prompt.shape[-1])),
-                                mode="constant", constant_values=tokenizer.pad_id)
-            input_tensor = torch.from_numpy(prompt).to(dtype=torch.long, device=model.device)
-        input_tensor = input_tensor.unsqueeze(0)
-        cur_len = input_tensor.shape[1]
-        if model.device == 'cuda':
-            autocast = torch.cuda.amp.autocast  # Use CUDA autocast for GPU
-        else:
-            autocast = torch.cpu.amp.autocast  # Use CPU autocast for CPU
-
-        print(f"Entering model forard call loop. in tensor shape: {input_tensor.shape} max len {max_len}")
-        bar = tqdm.tqdm(desc="generating", total=max_len - cur_len)
-        with bar, autocast(enabled=amp):
-        # with autocast(enabled=amp):
-            # while cur_len < max_len: 
-            for i in range(0, max_len): # ensure we get the full length output
-                print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
-                end = False
-                hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
-                next_token_seq = None
-                event_name = ""
-                for i in range(max_token_seq):
-                    mask = torch.zeros(tokenizer.vocab_size, dtype=torch.int64, device=model.device)
-                    if i == 0:
-                        mask_ids = list(tokenizer.event_ids.values()) + [tokenizer.eos_id]
-                        if disable_patch_change:
-                            mask_ids.remove(tokenizer.event_ids["patch_change"])
-                        if disable_control_change:
-                            mask_ids.remove(tokenizer.event_ids["control_change"])
-                        mask[mask_ids] = 1
-                    else:
-                        param_name = tokenizer.events[event_name][i - 1]
-                        mask_ids = tokenizer.parameter_ids[param_name]
-                        if param_name == "channel":
-                            mask_ids = [i for i in mask_ids if i not in disable_channels]
-                        mask[mask_ids] = 1
-                    logits = model.forward_token(hidden, next_token_seq)[:, -1:]
-                    scores = torch.softmax(logits / temp, dim=-1) * mask
-                    sample = model.sample_top_p_k(scores, top_p, top_k)
-                    if i == 0:
-                        next_token_seq = sample
-                        eid = sample.item()
-                        if eid == tokenizer.eos_id:
-                            end = True
-                            break
-                        event_name = tokenizer.id_events[eid]
-                    else:
-                        next_token_seq = torch.cat([next_token_seq, sample], dim=1)
-                        if len(tokenizer.events[event_name]) == i:
-                            break
-                if next_token_seq.shape[1] < max_token_seq:
-                    next_token_seq = F.pad(next_token_seq, (0, max_token_seq - next_token_seq.shape[1]),
-                                        "constant", value=tokenizer.pad_id)
-                next_token_seq = next_token_seq.unsqueeze(1)
-                # print(next_token_seq)
-                input_tensor = torch.cat([input_tensor, next_token_seq], dim=1)
-                cur_len += 1
-                bar.update(1)
-                yield next_token_seq.reshape(-1).cpu().numpy()
-                if end:
-                    break
-
-
-
-
-    def generate_midi_seq(self, model:MIDIModel, tokenizer:MIDITokenizer, score_format_input, output_len, temp, top_p, top_k, allow_cc, amp, use_model=True):
-        """
-        controller function for inference. Takes score format input, prepares it then sends it over to the model
-        It is possible I can cut this one out and just go straight to the infer function 
-        """
-        print("generate_mid_seq")
-        # prepare variables
-        mid_seq = []
-        max_len = int(output_len)
-        disable_patch_change = False
-        disable_channels = None
-
-        tokens = tokenizer.tokenize(score_format_input)
-
-        mid = np.asarray(tokens, dtype=np.int64)
-        print(f"Final midi format for model. Shape: {mid.shape}")
-        # mid = mid[:int(max_input_len)] # if want to use a subset of the inputs 
-
-        if use_model == False: # give up here...
-            return 
-        print(f"Calling infer with max len {max_len}")
-        generator = self.infer(model, tokenizer, mid, max_len=max_len, 
-                            temp=temp, top_p=top_p, top_k=top_k,
-                            disable_patch_change=disable_patch_change, disable_control_change=not allow_cc,
-                            disable_channels=disable_channels, amp=amp)
-        for i, token_seq in enumerate(generator):
-            # print(f"Gen step {i} of {len(token_seq)}")
-            mid_seq.append(token_seq)
-            ## this bit is for outputting as you generate ... might be useful! 
-            # event = tokenizer.tokens2event(token_seq.tolist())
-
-        score_format_data = tokenizer.detokenize(mid_seq)
-        return score_format_data
-
     def call_the_model(self):
         """
         convert the current contents of the ring buffer into 
         a score format event list as in MIDI.py score 
         then tokenize it and send it to the model 
         """
+        gen_events = None
         if self.lock.acquire(blocking=False):
-            gen_events = None
-            # try:
+            try:
             # Critical section that should be thread-safe
-            print("Generating improvisation...")
-            input_events = [copy.copy(e) for e in self.noteBuffer.array if e != None]
-            if len(input_events) == 0:
-                print("No context yet...")
-                return  
-            # now reset the ring buffer so we can capture more events whilst they continue to play
-            self.noteBuffer.reset()
-            # and reset the start time for the events we will now capture 
-            self.start_time_s = time.time() # reset start time for next frame 
-            print(f"Sending {len(input_events)} to the model")
-            input_events = [self.ticks_per_beat] + [input_events]
-            # output_events = self.generate(input_events)
-            gen_events = self.generate_midi_seq(self.model, self.tokenizer, 
-                        input_events,
-                        output_len=self.noteBuffer.size, # generate as much as we give you
-                        temp=0.7, 
-                        top_p=0.5, #0.1 to 1.0
-                        top_k=1, #1 to 20 
-                        allow_cc=False, # True or False
-                        amp=True, use_model=(self.test_mode == False)) # True or False  
+                print("Generating improvisation...")
+                input_events = [copy.copy(e) for e in self.noteBuffer.array if e != None]
+                if len(input_events) == 0:
+                    print("No context yet...")
+                    return  
+                # now reset the ring buffer so we can capture more events whilst they continue to play
+                self.noteBuffer.reset()
+                # and reset the start time for the events we will now capture 
+                self.start_time_s = time.time() # reset start time for next frame 
+                print(f"Sending {len(input_events)} to the model")
+                input_events = [self.ticks_per_beat] + [input_events]
+                # output_events = self.generate(input_events)
+                gen_events = ModelHandler.generate_midi_seq(self.model, self.tokenizer, 
+                            input_events,
+                            output_len=self.noteBuffer.size, # generate as much as we give you
+                            temp=0.7, 
+                            top_p=0.5, #0.1 to 1.0
+                            top_k=1, #1 to 20 
+                            allow_cc=False, # True or False
+                            amp=True, use_model=(self.test_mode == False)) # True or False  
+                self.analyse_output(gen_events)
+                for track in gen_events[1:]:# first one is tpb
+                    for score_msg in track:
+                        self.sendMIDI(score_msg)
+
+            # self.lock.release()
         
-            self.lock.release()
-        
-        #     finally:
-        #         # Release the lock after completion
-        #         self.lock.release()
-        #         print("Generation complete.") 
-        #         return gen_events
+            finally:
+                # Release the lock after completion
+                self.lock.release()
+                print("Generation complete.") 
+                return gen_events
         else:
             # Lock is already acquired, reject the call
             print("Generate is already running, rejecting call.")
@@ -398,7 +487,8 @@ class ImproviserAgent():
         def thread_function():
             while not self.stop_event.is_set():  
                 time.sleep(5)  # Wait for note collection
-                self.call_the_model() # try to generate every x seconds regardless of what has come in
+                gen_events = self.call_the_model() # try to generate every x seconds regardless of what has come in
+
                 self.midiNoteState.reset() # clear off any outstanding notes    
         # Start a new thread to run the thread_function
         self.gen_thread = threading.Thread(target=thread_function)
@@ -407,7 +497,9 @@ class ImproviserAgent():
     def stop(self):
         print("Stopping improviser ...")
         self.stop_event.set() 
-        self.midoWrapper.stop()
+        self.midiHandler.stop()
+        self.midiQ.stop()
+
         self.gen_thread.join()
 
         
