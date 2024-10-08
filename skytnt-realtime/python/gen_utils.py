@@ -35,7 +35,7 @@ class ModelHandler:
         """
         actually sends the input to the model and prepares the output 
         """
-        print(f"infer max len {max_len}")
+        # print(f"infer max len {max_len}")
         if disable_channels is not None:
             disable_channels = [tokenizer.parameter_ids["channel"][c] for c in disable_channels]
         else:
@@ -57,7 +57,7 @@ class ModelHandler:
         else:
             autocast = torch.cpu.amp.autocast  # Use CPU autocast for CPU
 
-        print(f"Entering model forard call loop. in tensor shape: {input_tensor.shape} max len {max_len}")
+        # print(f"Entering model forard call loop. in tensor shape: {input_tensor.shape} max len {max_len}")
         bar = tqdm.tqdm(desc="generating", total=max_len - cur_len)
         with bar, autocast(enabled=amp):
         # with autocast(enabled=amp):
@@ -308,6 +308,7 @@ class MIDIScheduler:
 
     def addMIDIMsg(self, msg, delay_ms):
         """Adds a MIDI message with a delay to the scheduler."""
+        # print(f"MIDIQ adding message {msg} {delay_ms}")
         send_time = time.time() * 1000 + delay_ms  # Calculate absolute send time in ms
         with self.queue_lock:
             heapq.heappush(self.message_queue, (send_time, msg))
@@ -339,7 +340,7 @@ class MIDIScheduler:
     def sendMIDI(self, msg):
         """Sends the MIDI message (you can replace this with actual sending logic)."""
         # Placeholder for actual MIDI sending code, e.g., using mido
-        print(f"MIDI Q: Sending MIDI message: {msg}")
+        # print(f"MIDI Q: Sending MIDI message: {msg}")
         self.midiHandler.sendMIDI(msg)
 
 
@@ -378,17 +379,18 @@ class ImproviserAgent():
         return self.midiHandler.initMIDI()
         
     def receiveMIDI(self, msg:mido.Message):
+   
         offset_secs = time.time() - self.start_time_s
         offset_in_ticks = (offset_secs / (60/self.bpm)) * self.ticks_per_beat
         if msg.type == "note_on":
-            self.midiNoteState.note_on(msg.note, msg.velocity, offset_in_ticks)
-        if msg.type == "note_off":
+            if msg.velocity > 0:
+                self.midiNoteState.note_on(msg.note, msg.velocity, offset_in_ticks)
+        if msg.type == "note_off" or msg.velocity == 0:
             onset_tick, len_ticks, on_vel = self.midiNoteState.note_off(msg.note, offset_in_ticks)
             # ["note", offset_in_ticks, duration_in_ticks, channel, note, velocity ]
             # time since the start of this generation cycle 
             # if msg.velocity == 0:print("receiveMIDI zero velocity note mate!")
             event = ['note', int(onset_tick), int(len_ticks), 0, msg.note, on_vel]
-            print(f"receiveMIDI: {event}")
             self.noteBuffer.addEvent(event)
             # if self.noteBuffer.isFull():# generate when the buffer is full
             #     self.generate()
@@ -398,8 +400,8 @@ class ImproviserAgent():
         assumes message format  ['note', start_time, duration, channel, note, velocity] 
         """
         # print("Sending a midi message", msg)
-        if msg[0] is not 'note': return 
-        assert len(msg) == 6, "sendMIDI received bad message " + str(msg)
+        if msg[0] != 'note': return # ignore non-note messages for now
+        assert len(msg) == 6, "sendMIDI received bad message " + str(msg) # note message looks bad
         note = msg[4]
         vel = msg[5]
         start = msg[1]

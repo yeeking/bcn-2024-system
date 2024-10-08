@@ -63,6 +63,11 @@ if __name__ == '__main__':
     state_dict = ckpt.get("state_dict", ckpt)
     model.load_state_dict(state_dict, strict=False)
     model.eval()
+    
+    # save the torch model as well
+    # torch.save("model.ckpt", model)
+	# torch.save(model.state_dict(), 'small_model.ckpt')
+    torch.save(model.state_dict(), 'torch_model.ckpt')
     model_base = MIDIModelBase(model).eval()
     model_token = MIDIModelToken(model).eval()
     with torch.no_grad():
@@ -78,4 +83,3 @@ if __name__ == '__main__':
                                                                        "y": {0: "batch", 1: "token_seq1", 2: "voc"}},
                     opt.model_token_out)
 	# this would save the model for torch....
-	#torch.save(model.state_dict(), 'small_model.ckpt')

@@ -1,7 +1,7 @@
 import os
 from midi_model import MIDIModel
 from midi_tokenizer import MIDITokenizer
-from gen_utils import ImproviserAgent, MIDIScheduler, ModelHandler
+from gen_utils import MidiDeviceHandler
 import mido
 import time
 
@@ -22,24 +22,15 @@ import time
 
 
 if __name__ == "__main__":
-    # ckpt = "small.ckpt"
-    ckpt = "../models/small.ckpt"
-    ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
-    # midi_file = 'input.mid'
 
-    assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt
-    # assert os.path.exists(midi_file), "Cannot find MIDI file " + midi_file
 
-    tokenizer = MIDITokenizer()
-    model = MIDIModel(tokenizer).to(device='cuda')
-    ModelHandler.load_model(ckpt, model)
-    
-    # print(model)
+    def got_midi(msg:mido.Message):
+        print(msg)
 
-    improviser = ImproviserAgent(memory_length=32, model=model, tokenizer=tokenizer, test_mode=False) 
-    
-    improviser.initMIDI() # select MIDI inputs and outputs
-    improviser.run() # start responding to MIDI input 
+    midiHandler = MidiDeviceHandler(got_midi)
+    midiHandler.getMIDIDevicesFromUser()
+    midiHandler.initMIDI()
+
 
     try:
         # Block main thread, simulate waiting for user input or other tasks
@@ -47,5 +38,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("Keyboard interrupt received.")
         
-    improviser.stop()
+    midiHandler.stop()
   
