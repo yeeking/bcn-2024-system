@@ -23,7 +23,6 @@ import time
 
 if __name__ == "__main__":
     # ckpt = "small.ckpt"
-    ckpt = "../models/small.ckpt"
     ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
     # midi_file = 'input.mid'
 
