@@ -1,5 +1,69 @@
 # Notes on building Barcelona system
 
+# 08/10/2024
+
+Today was a big day as I started testing the live interaction experience. Setup was as follows:
+
+- nvidia machine runs the model - sends and receives MIDI
+- model: la pre-trained model fine tuned on hawthorne
+- memory length 32
+- thinkpad runs reaper with two channels, plugin piano on each channel 
+
+Results are really cool. But lots of things to dial in/ options to put on a 'user interface'
+
+## Lots of thoughts about how to customise/ improve behaviour
+
+- sense of me being in control 
+  * lots of things to think about here. Too many notes, notes not in key, notes not clearly related to my notes, better control of what is sent as the input, better timing of when notes come back out. See below! 
+
+- does not always stay in key, but it is quite good if you have 'advanced tonal acceptance' :)
+  *  Solution: Need to have a key detector that checks the input prior to sending it to the model. Estimates the key + mode and limits output to notes in that mode (optionally). Could shift notes to nearest correct note. 
+
+- sometimes plays a lot of notes.
+  * Solution: note probability on output is very simple solution. 
+  * Or some smarter way to filter? e.g. identify only chords and play those or non-chords and play those
+
+- how far do notes go into the future? and how many notes come out each 'forward'
+  * seems to place notes quite far into the future and to generate quite a lot of notes each 'forward'
+
+- how often to retrigger inference
+  - think that also relates to comments below about clearing the input buffer and sending notes out during inference. 
+
+- when to clear the input buffer
+  * input buffer is based on number of notes, not time. Might make more sense to time slice the input buffer so to start overwriting when a length of time has passed as opposed to when a number of notes have come in. Should be a case of newest note time - oldest note time > max time? set write index to zero each time a new note comes in 
+
+- can you send it a longer input sequence and only generate a short output sequence?
+  - see comment below about sending notes as soon as first 'forward' call returns.
+
+- can you start sending notes as soon as they come out during sliding inference? 
+  * Right now it generates 128 or whatever frames of inference then sends all notes, ok as notes are placed into the future, but can it send notes as they come out? That way you just need to manage the auto-regressive input frame quite well, possibly mixing in not just the output but also new inputs received from MIDI
+
+- it plays at the same time as you
+  * note density metric for live input: decide when to play/ more subtle: auto-set output note density to complement input note density 
+
+
+# 06/10/2024
+
+## MIDI Q
+
+Did a quick bit of GPT + hacking to get a midi scheduler working that can Q MIDI events coming out of the model and send them out in the future at the correct time offset. 
+
+Works ok but note off seems to get stuck in the Q. 
+
+
+## A bit of performance testing
+
+I gots to know how fast my current gen_live script runs on my nvidia machine. 
+
+Answer: 30 it/s, so 128 takes 4 seconds. 
+
+On the same machine with CPU, seems to have a big lag kicking off inference each time, and then it goes at 8 it/s, with the delay, that goes to 4 it/s. So there you go. 
+
+## Length of generation weirdness
+
+Next I find that the length of stuff it generates is max length - length of input. Not sure where I got to with that so its one to keep digging into.
+
+
 # 04/10/2024
 
 Analysing the tokenizer removing notes problem.
@@ -22,10 +86,17 @@ The last digit of the 'matching' item is not the same. That appears to be the ve
 
 In the end, I did not really work out why reaper was sending zero velocity note ons, but my midi keyboard does not do that, so I am assuming it is something odd in the MIDI files I am playing out of Reaper. I made the tokenizer replace zero velocity note ons with > 0 ones if they come in at the same time with the same note. 
 
+## MIDI state thing
+
 Next step: deal with MIDI note offs and correct note durations? Or try to play the output of the model right now? 
 
-- midi note offs: I'll need a stateful midistate thing that tells me when note offs come in. Like I had in the C++ improviser in the end. 
+- midi note offs: I'll need a stateful midistate thing that tells me when note offs come in. Like I had in the C++ improviser in the end. lets do that 
 
+This is sorted now.
+
+## Length of generation weirdness
+
+Next I find that the length of stuff it generates is max length - length of input. Not sure where I got to with that so its one to keep digging into.
 
 # 03/10/2024
 
