@@ -364,6 +364,7 @@ class ImproviserAgent():
         self.test_mode = test_mode
         self.midiNoteState = MIDINoteState()
         self.midiQ = MIDIScheduler(self.midiHandler)
+        self.gen_thread = None
         
         
     def setModel(self, model:midi_model.MIDIModel):
@@ -485,17 +486,22 @@ class ImproviserAgent():
         starts the improvisers runtime loop in a thread
         returns the thread for external thread management 
         """
-        # Define the function that will run in the thread
-        def thread_function():
-            while not self.stop_event.is_set():  
-                time.sleep(5)  # Wait for note collection
-                gen_events = self.call_the_model() # try to generate every x seconds regardless of what has come in
+        while not self.stop_event.is_set():  
+            time.sleep(5)  # Wait for note collection
+            gen_events = self.call_the_model() # try to generate every x seconds regardless of what has come in
 
-                self.midiNoteState.reset() # clear off any outstanding notes    
+            self.midiNoteState.reset() # clear off any outstanding notes    
+
+    
+    def start(self):
+        self.stop_event.set() 
+        if self.gen_thread is not None: self.gen_thread.join()
+        self.stop_event.clear()
         # Start a new thread to run the thread_function
-        self.gen_thread = threading.Thread(target=thread_function)
+        self.gen_thread = threading.Thread(target=self.run)
         self.gen_thread.start()
     
+
     def stop(self):
         print("Stopping improviser ...")
         self.stop_event.set() 
