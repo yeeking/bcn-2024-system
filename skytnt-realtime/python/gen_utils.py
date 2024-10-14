@@ -11,7 +11,7 @@ import os
 import copy 
 import heapq
 from collections import defaultdict
-
+import torch.functional as F
 
 class ModelHandler:
     def __init__():
@@ -62,15 +62,15 @@ class ModelHandler:
         with bar, autocast(enabled=amp):
         # with autocast(enabled=amp):
             # while cur_len < max_len: 
-            for i in range(0, max_len): # ensure we get the full length output
+            for step in range(0, max_len): # ensure we get the full length output
                 # print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
                 end = False
                 hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
                 next_token_seq = None
                 event_name = ""
-                for i in range(max_token_seq):
+                for seq_channel in range(max_token_seq):
                     mask = torch.zeros(tokenizer.vocab_size, dtype=torch.int64, device=model.device)
-                    if i == 0:
+                    if seq_channel == 0:
                         mask_ids = list(tokenizer.event_ids.values()) + [tokenizer.eos_id]
                         if disable_patch_change:
                             mask_ids.remove(tokenizer.event_ids["patch_change"])
@@ -78,7 +78,7 @@ class ModelHandler:
                             mask_ids.remove(tokenizer.event_ids["control_change"])
                         mask[mask_ids] = 1
                     else:
-                        param_name = tokenizer.events[event_name][i - 1]
+                        param_name = tokenizer.events[event_name][seq_channel - 1]
                         mask_ids = tokenizer.parameter_ids[param_name]
                         if param_name == "channel":
                             mask_ids = [i for i in mask_ids if i not in disable_channels]
@@ -86,7 +86,7 @@ class ModelHandler:
                     logits = model.forward_token(hidden, next_token_seq)[:, -1:]
                     scores = torch.softmax(logits / temp, dim=-1) * mask
                     sample = model.sample_top_p_k(scores, top_p, top_k)
-                    if i == 0:
+                    if seq_channel == 0:
                         next_token_seq = sample
                         eid = sample.item()
                         if eid == tokenizer.eos_id:
