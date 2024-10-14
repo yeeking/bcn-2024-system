@@ -5,6 +5,8 @@ import os
 from midi_model import MIDIModel
 from midi_tokenizer import MIDITokenizer
 import tqdm
+import torch.nn.functional as F
+
 
 def load_model(path, model:MIDIModel):
     """

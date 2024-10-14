@@ -11,6 +11,7 @@ import os
 import copy 
 import heapq
 from collections import defaultdict
+import torch.nn.functional as F
 
 
 class ModelHandler:
@@ -58,19 +59,21 @@ class ModelHandler:
             autocast = torch.cpu.amp.autocast  # Use CPU autocast for CPU
 
         # print(f"Entering model forard call loop. in tensor shape: {input_tensor.shape} max len {max_len}")
+
         bar = tqdm.tqdm(desc="generating", total=max_len - cur_len)
         with bar, autocast(enabled=amp):
         # with autocast(enabled=amp):
             # while cur_len < max_len: 
-            for i in range(0, max_len): # ensure we get the full length output
-                # print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
+            for step in range(0, max_len): # ensure we get the full length output
+                print(f"Calling forward. step is {step} length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
                 end = False
                 hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
                 next_token_seq = None
                 event_name = ""
-                for i in range(max_token_seq):
+                for score_layer in range(max_token_seq):
+                    # print(f"sub loop score_layer is {score_layer} of {max_token_seq} ")
                     mask = torch.zeros(tokenizer.vocab_size, dtype=torch.int64, device=model.device)
-                    if i == 0:
+                    if score_layer == 0:
                         mask_ids = list(tokenizer.event_ids.values()) + [tokenizer.eos_id]
                         if disable_patch_change:
                             mask_ids.remove(tokenizer.event_ids["patch_change"])
@@ -78,7 +81,7 @@ class ModelHandler:
                             mask_ids.remove(tokenizer.event_ids["control_change"])
                         mask[mask_ids] = 1
                     else:
-                        param_name = tokenizer.events[event_name][i - 1]
+                        param_name = tokenizer.events[event_name][score_layer - 1]
                         mask_ids = tokenizer.parameter_ids[param_name]
                         if param_name == "channel":
                             mask_ids = [i for i in mask_ids if i not in disable_channels]
@@ -86,17 +89,28 @@ class ModelHandler:
                     logits = model.forward_token(hidden, next_token_seq)[:, -1:]
                     scores = torch.softmax(logits / temp, dim=-1) * mask
                     sample = model.sample_top_p_k(scores, top_p, top_k)
-                    if i == 0:
+                    if score_layer == 0:
                         next_token_seq = sample
                         eid = sample.item()
                         if eid == tokenizer.eos_id:
+                            print(f"Exiting as model gave us end of seq token gave us end of seq {eid} in its best sample {sample}")
                             end = True
                             break
                         event_name = tokenizer.id_events[eid]
                     else:
                         next_token_seq = torch.cat([next_token_seq, sample], dim=1)
-                        if len(tokenizer.events[event_name]) == i:
-                            break
+                        # this is a really bizarre way to exit the loop
+                        # it always exits when the number of parameters for the current event
+                        # is the same as the current layer (where the output is several 'instrumental layers')
+                        # I think it should just exit when the 'score_layer'
+                        #  is == max_token_seq which is the badly named
+                        #  value from the tokenizer dictating how many sequences (layers) we generate
+                        # and in fact, the loop controlling us already exits then anyways
+                        # so not sure why this early exit is here. 
+                        # if score_layer
+                        # # if len(tokenizer.events[event_name]) == score_layer:
+                        #     print(f"exiting as index of the event_name '{event_name}' of available events {tokenizer.events[event_name]} is same as score layer?? {score_layer} ")
+                        #     break
                 if next_token_seq.shape[1] < max_token_seq:
                     next_token_seq = F.pad(next_token_seq, (0, max_token_seq - next_token_seq.shape[1]),
                                         "constant", value=tokenizer.pad_id)
@@ -105,7 +119,10 @@ class ModelHandler:
                 input_tensor = torch.cat([input_tensor, next_token_seq], dim=1)
                 cur_len += 1
                 bar.update(1)
+                print(f"Yielding {next_token_seq.shape}")
                 yield next_token_seq.reshape(-1).cpu().numpy()
+                # return next_token_seq.reshape(-1).cpu().numpy()
+                
                 if end:
                     break
 
@@ -116,33 +133,34 @@ class ModelHandler:
         It is possible I can cut this one out and just go straight to the infer function 
         returns data in the format produced by MidiTokenizer.detokenize, which is 'score' format 
         """
-        print("generate_mid_seq")
-        # prepare variables
-        mid_seq = []
+        print(f"generate_mid_seq:: start with input {score_format_input}")
+
         max_len = int(output_len)
         disable_patch_change = False
         disable_channels = None
 
-        tokens = tokenizer.tokenize(score_format_input)
+        in_tokens = tokenizer.tokenize(score_format_input)
 
-        mid = np.asarray(tokens, dtype=np.int64)
-        print(f"Final midi format for model. Shape: {mid.shape}")
+        in_tokens = np.asarray(in_tokens, dtype=np.int64)
+        print(f"Final midi format for model. Shape: {in_tokens.shape}")
         # mid = mid[:int(max_input_len)] # if want to use a subset of the inputs 
 
         if use_model == False: # give up here...
             return 
         print(f"Calling infer with max len {max_len}")
-        generator = ModelHandler.infer(model, tokenizer, mid, max_len=max_len, 
+        generator = ModelHandler.infer(model, tokenizer, in_tokens, max_len=max_len, 
                             temp=temp, top_p=top_p, top_k=top_k,
                             disable_patch_change=disable_patch_change, disable_control_change=not allow_cc,
                             disable_channels=disable_channels, amp=amp)
+        print(f"Generator created. Enumerating")
+        # prepare variables
+        out_tokens = []
         for i, token_seq in enumerate(generator):
-            # print(f"Gen step {i} of {len(token_seq)}")
-            mid_seq.append(token_seq)
+            out_tokens.append(token_seq)
             ## this bit is for outputting as you generate ... might be useful! 
             # event = tokenizer.tokens2event(token_seq.tolist())
 
-        score_format_data = tokenizer.detokenize(mid_seq)
+        score_format_data = tokenizer.detokenize(out_tokens)
         return score_format_data
 
 
