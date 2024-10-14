@@ -15,7 +15,11 @@ if __name__ == "__main__":
     model = MIDIModel(tokenizer).to(device='cuda')
     ModelHandler.load_model(ckpt, model)
     
-    improviser = ImproviserAgent(memory_length=32, model=model, tokenizer=tokenizer, test_mode=False) 
+    improviser = ImproviserAgent(memory_length=32, 
+                                model=model, 
+                                tokenizer=tokenizer,
+                                allow_gen_overlap=False,  
+                                test_mode=False) 
     
     improviser.initMIDI() # select MIDI inputs and outputs
     improviser.start() # start responding to MIDI input 

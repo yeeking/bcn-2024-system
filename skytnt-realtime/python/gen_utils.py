@@ -320,24 +320,16 @@ class MIDIScheduler:
         with self.queue_lock:
             heapq.heappush(self.message_queue, (send_time, msg))
 
+    def isEmpty(self):
+        with self.queue_lock:
+            return len(self.message_queue) == 0
+
     def _clock_thread(self):
         """Background thread to regularly check and send MIDI messages."""
         while self.running:
             current_time = time.time() * 1000  # Current time in milliseconds
             to_send = []
             with self.queue_lock:
-                # if len(self.message_queue) > 0:
-                #     last = self.message_queue[-1][0]
-                #     until_last = last - current_time 
-                #     print(f"Accroding to the heapq, the last message is {until_last/1000/1000} s away")
-                #     for item in self.message_queue:
-                #         msg_time = self.message_queue[-1][0]
-                #         until_this = msg_time - current_time 
-                #         if until_last < until_this:
-                #             print(f"Found an older one {until_this} is more than {until_last}")
-                        
-                #     # print(f"Q: clock thread has {len(self.message_queue)} messages oldest {until_last / 1000}")
-
                 # Collect all messages whose time is less than or equal to the current time
                 while self.message_queue and self.message_queue[0][0] <= current_time:
                     send_time, msg = heapq.heappop(self.message_queue)
@@ -370,7 +362,7 @@ class MIDIScheduler:
 
 
 class ImproviserAgent():
-    def __init__(self, memory_length:int, model:MIDIModel, tokenizer:MIDITokenizer, test_mode=False):
+    def __init__(self, memory_length:int, model:MIDIModel, tokenizer:MIDITokenizer, allow_gen_overlap=False, test_mode=False):
         self.midiHandler = MidiDeviceHandler(self.receiveMIDI)
         self.noteBuffer = RingBuffer(memory_length)
         self.start_time_s = time.time()
@@ -384,6 +376,7 @@ class ImproviserAgent():
         self.midiNoteState = MIDINoteState()
         self.midiQ = MIDIScheduler(self.midiHandler)
         self.gen_thread = None
+        self.allow_gen_overlap = allow_gen_overlap
         self.status = "starting up"
         
         
@@ -517,7 +510,12 @@ class ImproviserAgent():
             self.status = "Listening"
             time.sleep(5)  # Wait for note collection
             self.status = "Generating"
-            gen_events = self.call_the_model() # try to generate every x seconds regardless of what has come in
+ 
+            if (self.allow_gen_overlap) or (self.midiQ.isEmpty()):
+                print(f"Q empty: {self.midiQ.isEmpty()} allow overlap {self.allow_gen_overlap}")
+                gen_events = self.call_the_model() # try to generate every x seconds regardless of what has come in
+            else:
+                print("Q not empty or no overlap allowed")
             self.midiNoteState.reset() # clear off any outstanding notes    
 
     
