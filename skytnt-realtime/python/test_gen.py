@@ -6,7 +6,8 @@ from midi_tokenizer import MIDITokenizer
 from gen_utils import ImproviserAgent, MIDIScheduler, ModelHandler
 import mido
 import time
-
+import numpy as np 
+import MIDI
 
 if __name__ == "__main__":
     ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
@@ -18,7 +19,7 @@ if __name__ == "__main__":
     print("Loading model weights")
     ModelHandler.load_model(ckpt, model)
     print("Sending input to model")
-    notes = [['note', i*120, 120, 0, 60, 60] for i in range(128)] # start_time, duration, channel, note, velocity
+    notes = [['note', i*8, 120, 0, np.random.randint(32, 96), 60] for i in range(64)] # start_time, duration, channel, note, velocity
     input_events = [480,
                      # channel 0
                      [
@@ -29,7 +30,18 @@ if __name__ == "__main__":
                      # channel 0
                      notes
     ]
-    max_len = 32
+
+    # try loading a midi file
+    midif = 'mark_intro.md.MID'
+    assert os.path.exists(midif)
+
+    with open(midif, 'rb') as file:
+        # Read the binary data from the file
+        mid = file.read()
+    input_events = MIDI.midi2score(mid)
+    print(f"input: {input_events}")
+
+    max_len = len(input_events[1])
     gen_events = ModelHandler.generate_midi_seq(model, tokenizer, 
                         input_events,
                         output_len=max_len, # generate as much as we give you
@@ -38,6 +50,5 @@ if __name__ == "__main__":
                         top_k=1, #1 to 20 
                         allow_cc=False, # True or False
                         amp=True, use_model=True) 
-    real_data = gen_events[1][1]
-    print(f"Done with gen. Len of output {len(real_data)} but max len {max_len}")
-    
+    print(f"Done with gen. Len of output {len(gen_events[1])} but max len {max_len}")
+    print(gen_events)

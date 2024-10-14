@@ -12,6 +12,7 @@ import copy
 import heapq
 from collections import defaultdict
 import torch.nn.functional as F
+from transformers import DynamicCache
 
 
 class ModelHandler:
@@ -60,6 +61,8 @@ class ModelHandler:
 
         # print(f"Entering model forard call loop. in tensor shape: {input_tensor.shape} max len {max_len}")
 
+        # cache1 = DynamicCache()# experimental 
+
         bar = tqdm.tqdm(desc="generating", total=max_len - cur_len)
         with bar, autocast(enabled=amp):
         # with autocast(enabled=amp):
@@ -67,9 +70,13 @@ class ModelHandler:
             for step in range(0, max_len): # ensure we get the full length output
                 # print(f"Calling forward. step is {step} length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
                 end = False
-                hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
+                hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)# original
+                # hidden = model.forward(input_tensor, cache=cache1)[0, -1].unsqueeze(0)# experiment 
+                
                 next_token_seq = None
                 event_name = ""
+                # cache2 = DynamicCache()
+
                 for score_layer in range(max_token_seq):
                     # print(f"sub loop score_layer is {score_layer} of {max_token_seq} ")
                     mask = torch.zeros(tokenizer.vocab_size, dtype=torch.int64, device=model.device)
@@ -86,7 +93,10 @@ class ModelHandler:
                         if param_name == "channel":
                             mask_ids = [i for i in mask_ids if i not in disable_channels]
                         mask[mask_ids] = 1
-                    logits = model.forward_token(hidden, next_token_seq)[:, -1:]
+
+                    logits = model.forward_token(hidden, next_token_seq)[:, -1:]# original 
+                    # logits = model.forward_token(hidden, next_token_seq, cache=cache2)[:, -1:]# experiment 
+
                     scores = torch.softmax(logits / temp, dim=-1) * mask
                     sample = model.sample_top_p_k(scores, top_p, top_k)
                     if score_layer == 0:
@@ -99,18 +109,7 @@ class ModelHandler:
                         event_name = tokenizer.id_events[eid]
                     else:
                         next_token_seq = torch.cat([next_token_seq, sample], dim=1)
-                        # this is a really bizarre way to exit the loop
-                        # it always exits when the number of parameters for the current event
-                        # is the same as the current layer (where the output is several 'instrumental layers')
-                        # I think it should just exit when the 'score_layer'
-                        #  is == max_token_seq which is the badly named
-                        #  value from the tokenizer dictating how many sequences (layers) we generate
-                        # and in fact, the loop controlling us already exits then anyways
-                        # so not sure why this early exit is here. 
-                        # if score_layer
-                        # # if len(tokenizer.events[event_name]) == score_layer:
-                        #     print(f"exiting as index of the event_name '{event_name}' of available events {tokenizer.events[event_name]} is same as score layer?? {score_layer} ")
-                        #     break
+
                 if next_token_seq.shape[1] < max_token_seq:
                     next_token_seq = F.pad(next_token_seq, (0, max_token_seq - next_token_seq.shape[1]),
                                         "constant", value=tokenizer.pad_id)
@@ -119,9 +118,8 @@ class ModelHandler:
                 input_tensor = torch.cat([input_tensor, next_token_seq], dim=1)
                 cur_len += 1
                 bar.update(1)
-                print(f"Yielding {next_token_seq.shape}")
+                # print(f"Yielding {next_token_seq.shape}")
                 yield next_token_seq.reshape(-1).cpu().numpy()
-                # return next_token_seq.reshape(-1).cpu().numpy()
                 
                 if end:
                     break

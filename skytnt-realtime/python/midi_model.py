@@ -27,30 +27,46 @@ class MIDIModel(pl.LightningModule):
             self.net_token = self.net_token.to_bettertransformer()
         self.lm_head = nn.Linear(n_embd, tokenizer.vocab_size, bias=False)
 
-    def forward_token(self, hidden_state, x=None):
+    def forward_token(self, hidden_state=None, x=None, cache=None):
         """
 
         :param hidden_state: (batch_size, n_embd)
         :param x: (batch_size, token_sequence_length)
         :return: (batch_size, 1 + token_sequence_length, vocab_size)
         """
-        hidden_state = hidden_state.unsqueeze(1)  # (batch_size, 1, n_embd)
+        if hidden_state is not None:
+            hidden_state = hidden_state.unsqueeze(1)  # (batch_size, 1, n_embd)
         if x is not None:
             x = self.net_token.embed_tokens(x)
-            hidden_state = torch.cat([hidden_state, x], dim=1)
-        hidden_state = self.net_token.forward(inputs_embeds=hidden_state).last_hidden_state
+            if hidden_state is not None:
+                hidden_state = torch.cat([hidden_state, x], dim=1)
+            hidden_state = x # this was not there before 
+
+        # hidden_state = self.net_token.forward(inputs_embeds=hidden_state).last_hidden_state
+        hidden_state = self.net_token.forward(inputs_embeds=hidden_state,
+                                        past_key_values=cache,
+                                        use_cache=cache is not None).last_hidden_state
+
         return self.lm_head(hidden_state)
 
-    def forward(self, x):
+    def forward(self, x, cache=None):
         """
         :param x: (batch_size, midi_sequence_length, token_sequence_length)
         :return: hidden (batch_size, midi_sequence_length, n_embd)
         """
 
-        # merge token sequence
+        # # merge token sequence
+        # x = self.net.embed_tokens(x)
+        # x = x.sum(dim=-2)
+        # x = self.net.forward(inputs_embeds=x)
+        # return x.last_hidden_state
+    
+        #   merge token sequence
         x = self.net.embed_tokens(x)
         x = x.sum(dim=-2)
-        x = self.net.forward(inputs_embeds=x)
+        x = self.net.forward(inputs_embeds=x,
+                             past_key_values=cache,
+                             use_cache=cache is not None)
         return x.last_hidden_state
 
     def sample_top_p_k(self, probs, p, k):
