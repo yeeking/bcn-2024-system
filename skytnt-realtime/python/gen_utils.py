@@ -293,7 +293,7 @@ class MidiDeviceHandler():
         with self.output_lock:
             if self.output_port:
                 self.output_port.send(message)
-                print(f"MIDI HANDLER Sent MIDI message: {message}")
+                # print(f"MIDI HANDLER Sent MIDI message: {message}")
             else:
                 print("MIDI HANDLER MIDI output port is not initialized.")
         
@@ -316,6 +316,7 @@ class MIDIScheduler:
         """Adds a MIDI message with a delay to the scheduler."""
         # print(f"MIDIQ adding message {msg} {delay_ms}")
         send_time = time.time() * 1000 + delay_ms  # Calculate absolute send time in ms
+        # print(f"Q put a message {msg.type} {round(delay_ms/1000, 2)}ms in the future")
         with self.queue_lock:
             heapq.heappush(self.message_queue, (send_time, msg))
 
@@ -325,6 +326,18 @@ class MIDIScheduler:
             current_time = time.time() * 1000  # Current time in milliseconds
             to_send = []
             with self.queue_lock:
+                # if len(self.message_queue) > 0:
+                #     last = self.message_queue[-1][0]
+                #     until_last = last - current_time 
+                #     print(f"Accroding to the heapq, the last message is {until_last/1000/1000} s away")
+                #     for item in self.message_queue:
+                #         msg_time = self.message_queue[-1][0]
+                #         until_this = msg_time - current_time 
+                #         if until_last < until_this:
+                #             print(f"Found an older one {until_this} is more than {until_last}")
+                        
+                #     # print(f"Q: clock thread has {len(self.message_queue)} messages oldest {until_last / 1000}")
+
                 # Collect all messages whose time is less than or equal to the current time
                 while self.message_queue and self.message_queue[0][0] <= current_time:
                     send_time, msg = heapq.heappop(self.message_queue)
@@ -416,9 +429,10 @@ class ImproviserAgent():
         dur = msg[2]
 
         # work out the time delta in ms
+        secs_per_tick = (60.0 / self.bpm) / self.ticks_per_beat
         beat_offset = start / self.ticks_per_beat # in beats
-        note_on_offset_s = 60.0 / self.bpm * beat_offset
-        note_off_offset_s = note_on_offset_s + (60.0 / self.bpm * dur)
+        note_on_offset_s = (60.0 / self.bpm) * beat_offset
+        note_off_offset_s = note_on_offset_s + (secs_per_tick * dur)
         
         onMsg = mido.Message('note_on', note=note, velocity=vel)
         offMsg = mido.Message('note_off', note=note, velocity=vel)
@@ -473,7 +487,7 @@ class ImproviserAgent():
                             top_p=0.5, #0.1 to 1.0
                             top_k=1, #1 to 20 
                             allow_cc=False, # True or False
-                            amp=True, use_model=(self.test_mode == False)) # True or False  
+                            amp=True, use_model=(self.test_mode == False), show_bar=False) # True or False  
                 self.analyse_output(gen_events)
                 for track in gen_events[1:]:# first one is tpb
                     for score_msg in track:
