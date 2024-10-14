@@ -365,6 +365,7 @@ class ImproviserAgent():
         self.midiNoteState = MIDINoteState()
         self.midiQ = MIDIScheduler(self.midiHandler)
         self.gen_thread = None
+        self.status = "starting up"
         
         
     def setModel(self, model:midi_model.MIDIModel):
@@ -433,12 +434,16 @@ class ImproviserAgent():
         print(f"analyse_output: chans {ch_count} ch1 events {ch1_events} tpb {tpb} beats {beat_offsets}")
   
         
+    def get_status(self):
+        return self.status 
+    
     def call_the_model(self):
         """
         convert the current contents of the ring buffer into 
         a score format event list as in MIDI.py score 
         then tokenize it and send it to the model 
         """
+
         gen_events = None
         if self.lock.acquire(blocking=False):
             try:
@@ -474,11 +479,13 @@ class ImproviserAgent():
                 # Release the lock after completion
                 self.lock.release()
                 print("Generation complete.") 
+
                 return gen_events
         else:
             # Lock is already acquired, reject the call
             print("Generate is already running, rejecting call.")
             return 
+        
 
         
     def run(self):
@@ -486,14 +493,16 @@ class ImproviserAgent():
         starts the improvisers runtime loop in a thread
         returns the thread for external thread management 
         """
-        while not self.stop_event.is_set():  
+        while not self.stop_event.is_set():
+            self.status = "Listening"
             time.sleep(5)  # Wait for note collection
+            self.status = "Generating"
             gen_events = self.call_the_model() # try to generate every x seconds regardless of what has come in
-
             self.midiNoteState.reset() # clear off any outstanding notes    
 
     
     def start(self):
+        self.status = "Improviser starting up"
         self.stop_event.set() 
         if self.gen_thread is not None: self.gen_thread.join()
         self.stop_event.clear()
@@ -503,6 +512,7 @@ class ImproviserAgent():
     
 
     def stop(self):
+        self.status = "Improviser shutting down"
         print("Stopping improviser ...")
         self.stop_event.set() 
         self.midiHandler.stop()

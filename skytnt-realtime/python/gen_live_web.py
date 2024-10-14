@@ -12,84 +12,83 @@ from gen_utils import ImproviserAgent, MIDIScheduler, ModelHandler
 import mido
 
 
-# Clock class that runs in a background thread and calls a UI update callback
-class Clock:
-    def __init__(self):
-        self.current_time = datetime.datetime.now().strftime("%H:%M:%S")
-        self.running = False
-
-    def start(self):
-        # exit old thread if needed 
-        if self.running:
-            self.running = False
-            if self.thread is not None:
-                self.thread.join()
-        self.running = True
-        self.thread = threading.Thread(target=self.run)
-        self.thread.daemon = True
-        self.thread.start()
-
-    def run(self):
-        while self.running:
-            self.current_time = datetime.datetime.now().strftime("%H:%M:%S")
-            time.sleep(1)
-
-    def get_time(self):
-        return self.current_time 
-    
-    def stop(self):
-        self.running = False
-
 # Dash app setup
 app = dash.Dash(__name__)
 
-# Create the clock instance and pass it the update_ui_time callback
-clock = Clock()
 
 # Dash app layout
 app.layout = html.Div([
     html.H1("Barcelona System 2024"),
-    html.Div(id='time-display', style={'font-size': '48px'}),
+    html.Div(id='improviser-status-display', style={'font-size': '48px'}),
     dcc.Interval(
         id='update-time-trigger',
         interval=1000,  # in milliseconds (1 second)
         n_intervals=0
     ), 
-    html.Button('Start Clock', id='start-button', n_clicks=0),
-    html.Div(id='clock-start-status', style={'font-size': '24px', 'color': 'green'}),
-    html.Button('Stop Clock', id='stop-button', n_clicks=0),
-    html.Div(id='clock-stop-status', style={'font-size': '24px', 'color': 'red'})
+    html.Button('Start improviser', id='start-button', n_clicks=0),
+    html.Div(id='improviser-start-status', style={'font-size': '24px', 'color': 'green'}),
+    html.Button('Stop improviser', id='stop-button', n_clicks=0),
+    html.Div(id='improviser-stop-status', style={'font-size': '24px', 'color': 'red'})
 
 ])
 
 
-@app.callback(Output('time-display', 'children'),[Input('update-time-trigger', 'n_intervals')])
+@app.callback(Output('improviser-status-display', 'children'),[Input('update-time-trigger', 'n_intervals')])
 def update_time(n):
-    return f"The current time is: {clock.get_time()}"
+    return f"The current time is: {improviser.get_status()}"
 
-# Callback to stop the clock when the button is clicked
+# Callback to stop the improviser when the button is clicked
 @app.callback(
-    Output('clock-stop-status', 'children'),
+    Output('improviser-stop-status', 'children'),
     [Input('stop-button', 'n_clicks')]
 )
-def stop_clock_button_clicked(n_clicks):
+def stop_improviser_button_clicked(n_clicks):
     if n_clicks > 0:
-        clock.stop()
-        return "Clock has been stopped."
+        improviser.stop()
+        return "improviser has been stopped."
     return ""
 
-# Callback to stop the clock when the button is clicked
+# Callback to stop the improviser when the button is clicked
 @app.callback(
-    Output('clock-start-status', 'children'),
+    Output('improviser-start-status', 'children'),
     [Input('start-button', 'n_clicks')]
 )
-def start_clock_button_clicked(n_clicks):
+def start_improviser_button_clicked(n_clicks):
     if n_clicks > 0:
-        clock.start()
-        return "Clock has been started."
+        improviser.start()
+        return "improviser has been started."
     return ""
+
+
+
+ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
+
+assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt
+
+tokenizer = MIDITokenizer()
+model = MIDIModel(tokenizer).to(device='cuda')
+ModelHandler.load_model(ckpt, model)
+
+
+
+improviser = ImproviserAgent(memory_length=32, model=model, tokenizer=tokenizer, test_mode=False) 
+
+improviser.initMIDI() # select MIDI inputs and outputs
+# improviser.start() # start responding to MIDI input 
+
 
 # Run the Dash app
 if __name__ == '__main__':
+
+
+    # try:
+    #     # Block main thread, simulate waiting for user input or other tasks
+    #     input("Press Enter to stop the model runner...\n")
+    # except KeyboardInterrupt:
+    #     print("Keyboard interrupt received.")
+        
+    # improviser.stop()
+
     app.run_server(debug=True, host='0.0.0.0')
+    
 

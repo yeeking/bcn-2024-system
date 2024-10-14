@@ -8,7 +8,7 @@ import time
 
 if __name__ == "__main__":
     ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
-
+    # ckpt = "../../trained-models/skytnt/skytnt-hf-model-la-dataset.ckpt"
     assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt
 
     tokenizer = MIDITokenizer()
