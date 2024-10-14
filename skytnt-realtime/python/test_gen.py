@@ -51,6 +51,6 @@ if __name__ == "__main__":
                             top_p=0.5, #0.1 to 1.0
                             top_k=1, #1 to 20 
                             allow_cc=False, # True or False
-                            amp=True, use_model=True) 
-        print(f"Done with gen. Len of output {len(gen_events[1])} but max len {max_len}")
+                            amp=True, use_model=True, show_bar=False) 
+        # print(f"Done with gen. Len of output {len(gen_events[1])} but max len {max_len}")
         print(f" at 120 BPM max len {max_len}, last beat at this offset in seconds {gen_events[1][-1][1] / 480 / 120 * 60}")

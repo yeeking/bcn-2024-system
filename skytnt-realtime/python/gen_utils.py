@@ -6,7 +6,8 @@ import time
 import numpy as np
 import torch 
 from midi_model import MIDIModel, MIDITokenizer
-import tqdm
+import tqdm # for the progress bar
+from contextlib import nullcontext # for the anti-progress bar :)   
 import os
 import copy 
 import heapq
@@ -31,7 +32,7 @@ class ModelHandler:
 
     @torch.inference_mode()
     def infer(model:MIDIModel, tokenizer:MIDITokenizer, prompt=None, max_len=512, temp=1.0, top_p=0.98, top_k=20,
-                disable_patch_change=False, disable_control_change=False, disable_channels=None, amp=True):
+                disable_patch_change=False, disable_control_change=False, disable_channels=None, amp=True, show_bar=False):
         """
         actually sends the input to the model and prepares the output 
         """
@@ -58,7 +59,11 @@ class ModelHandler:
             autocast = torch.cpu.amp.autocast  # Use CPU autocast for CPU
 
         # print(f"Entering model forard call loop. in tensor shape: {input_tensor.shape} max len {max_len}")
-        bar = tqdm.tqdm(desc="generating", total=max_len - cur_len)
+        if show_bar == False:
+            bar = tqdm.tqdm(desc="generating", total=max_len - cur_len, disable=True)
+        else:
+            bar = tqdm.tqdm(desc="generating", total=max_len - cur_len)
+                
         with bar, autocast(enabled=amp):
         # with autocast(enabled=amp):
             # while cur_len < max_len: 
@@ -68,9 +73,9 @@ class ModelHandler:
                 hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
                 next_token_seq = None
                 event_name = ""
-                for seq_channel in range(max_token_seq):
+                for param_ind in range(max_token_seq):
                     mask = torch.zeros(tokenizer.vocab_size, dtype=torch.int64, device=model.device)
-                    if seq_channel == 0:
+                    if param_ind == 0:
                         mask_ids = list(tokenizer.event_ids.values()) + [tokenizer.eos_id]
                         if disable_patch_change:
                             mask_ids.remove(tokenizer.event_ids["patch_change"])
@@ -78,7 +83,7 @@ class ModelHandler:
                             mask_ids.remove(tokenizer.event_ids["control_change"])
                         mask[mask_ids] = 1
                     else:
-                        param_name = tokenizer.events[event_name][seq_channel - 1]
+                        param_name = tokenizer.events[event_name][param_ind - 1]
                         mask_ids = tokenizer.parameter_ids[param_name]
                         if param_name == "channel":
                             mask_ids = [i for i in mask_ids if i not in disable_channels]
@@ -86,7 +91,7 @@ class ModelHandler:
                     logits = model.forward_token(hidden, next_token_seq)[:, -1:]
                     scores = torch.softmax(logits / temp, dim=-1) * mask
                     sample = model.sample_top_p_k(scores, top_p, top_k)
-                    if seq_channel == 0:
+                    if param_ind == 0:
                         next_token_seq = sample
                         eid = sample.item()
                         if eid == tokenizer.eos_id:
@@ -104,19 +109,20 @@ class ModelHandler:
                 # print(next_token_seq)
                 input_tensor = torch.cat([input_tensor, next_token_seq], dim=1)
                 cur_len += 1
-                bar.update(1)
+                if show_bar:
+                    bar.update(1)
                 yield next_token_seq.reshape(-1).cpu().numpy()
                 if end:
                     break
 
 
-    def generate_midi_seq(model:MIDIModel, tokenizer:MIDITokenizer, score_format_input, output_len, temp, top_p, top_k, allow_cc, amp, use_model=True):
+    def generate_midi_seq(model:MIDIModel, tokenizer:MIDITokenizer, score_format_input, output_len, temp, top_p, top_k, allow_cc, amp, use_model=True, show_bar=False):
         """
         controller function for inference. Takes score format input, prepares it then sends it over to the model
         It is possible I can cut this one out and just go straight to the infer function 
         returns data in the format produced by MidiTokenizer.detokenize, which is 'score' format 
         """
-        print("generate_mid_seq")
+        # print("generate_mid_seq")
         # prepare variables
         mid_seq = []
         max_len = int(output_len)
@@ -126,16 +132,16 @@ class ModelHandler:
         tokens = tokenizer.tokenize(score_format_input)
 
         mid = np.asarray(tokens, dtype=np.int64)
-        print(f"Final midi format for model. Shape: {mid.shape}")
+        # print(f"Final midi format for model. Shape: {mid.shape}")
         # mid = mid[:int(max_input_len)] # if want to use a subset of the inputs 
 
         if use_model == False: # give up here...
             return 
-        print(f"Calling infer with max len {max_len}")
+        # print(f"Calling infer with max len {max_len}")
         generator = ModelHandler.infer(model, tokenizer, mid, max_len=max_len, 
                             temp=temp, top_p=top_p, top_k=top_k,
                             disable_patch_change=disable_patch_change, disable_control_change=not allow_cc,
-                            disable_channels=disable_channels, amp=amp)
+                            disable_channels=disable_channels, amp=amp, show_bar=show_bar)
         for i, token_seq in enumerate(generator):
             # print(f"Gen step {i} of {len(token_seq)}")
             mid_seq.append(token_seq)
