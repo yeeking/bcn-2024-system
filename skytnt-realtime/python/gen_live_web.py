@@ -70,7 +70,10 @@ model = MIDIModel(tokenizer).to(device='cuda')
 ModelHandler.load_model(ckpt, model)
 
 
-
+## this commented out one was the version mark first used on 10th Oct '24
+## with 32 memory length and 5 second auto-regen mode
+## and the la->hawthorne fine tune model: version_703-la-hawthorne-finetune.ckpt 
+#improviser = ImproviserAgent(memory_length=32, model=model, tokenizer=tokenizer, test_mode=False) 
 improviser = ImproviserAgent(memory_length=32, model=model, tokenizer=tokenizer, test_mode=False) 
 
 improviser.initMIDI() # select MIDI inputs and outputs
