@@ -65,7 +65,7 @@ class ModelHandler:
         # with autocast(enabled=amp):
             # while cur_len < max_len: 
             for step in range(0, max_len): # ensure we get the full length output
-                print(f"Calling forward. step is {step} length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
+                # print(f"Calling forward. step is {step} length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
                 end = False
                 hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
                 next_token_seq = None
@@ -133,7 +133,7 @@ class ModelHandler:
         It is possible I can cut this one out and just go straight to the infer function 
         returns data in the format produced by MidiTokenizer.detokenize, which is 'score' format 
         """
-        print(f"generate_mid_seq:: start with input {score_format_input}")
+        # print(f"generate_mid_seq:: start with input {score_format_input}")
 
         max_len = int(output_len)
         disable_patch_change = False
@@ -142,17 +142,17 @@ class ModelHandler:
         in_tokens = tokenizer.tokenize(score_format_input)
 
         in_tokens = np.asarray(in_tokens, dtype=np.int64)
-        print(f"Final midi format for model. Shape: {in_tokens.shape}")
+        # print(f"Final midi format for model. Shape: {in_tokens.shape}")
         # mid = mid[:int(max_input_len)] # if want to use a subset of the inputs 
 
         if use_model == False: # give up here...
             return 
-        print(f"Calling infer with max len {max_len}")
+        # print(f"Calling infer with max len {max_len}")
         generator = ModelHandler.infer(model, tokenizer, in_tokens, max_len=max_len, 
                             temp=temp, top_p=top_p, top_k=top_k,
                             disable_patch_change=disable_patch_change, disable_control_change=not allow_cc,
                             disable_channels=disable_channels, amp=amp)
-        print(f"Generator created. Enumerating")
+        # print(f"Generator created. Enumerating")
         # prepare variables
         out_tokens = []
         for i, token_seq in enumerate(generator):
