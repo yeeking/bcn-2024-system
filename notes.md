@@ -18,6 +18,8 @@
   * then as a counterpart, when generating we might figure out how to stop when we get a certain length
      into the future. But the input is the first and easiest one to crack
 
+=======
+>>>>>>> 2fc72fd3a4baa6df9ef120176af00c6d4d61514b
 # 14/10/2024
 
 Working on improved generator and midi note control. Main issues:
@@ -31,6 +33,12 @@ DONE  -> at least add a 'do not regen if you are still playing out the previous 
 DONE   -> maybe two modes... overlap or not overlap
 
 DONE - coupling between input lengtha and output length
+  -> at least add a 'do not regen if you are still playing out the previous output'
+- output from gen seems to last quite a long time
+  -> if waiting for end before re-gen, might get a bit tedious. 
+   -> maybe two modes... overlap or not overlap
+
+- coupling between input lengtha and output length
   -> input length seems to be tied to output length
    -> ideally, I would want them independent. E.g. having input context be long enough for the last 5 seconds of notes 
    -> I fixed this with the import torch.functional as F call which previously crashed it (duh)

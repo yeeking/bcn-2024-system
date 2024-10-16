@@ -30,6 +30,7 @@ if __name__ == "__main__":
     midiHandler = MidiDeviceHandler(got_midi)
     midiHandler.getMIDIDevicesFromUser()
     midiHandler.initMIDI()
+   
 
 
     try:
