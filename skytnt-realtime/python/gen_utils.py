@@ -303,6 +303,10 @@ class MidiDeviceHandler():
 
 
 class MIDIScheduler:
+    """
+    maintains a queue of MIDI messages with time stamps and 
+    automatically sends them out via the midi handler at the correct time
+    """
     def __init__(self, midiHandler:MidiDeviceHandler):
         self.message_queue = []  # Priority queue (min-heap) for (time, msg) tuples
         self.queue_lock = threading.Lock()  # To ensure thread safety for the queue
@@ -361,10 +365,28 @@ class MIDIScheduler:
         self.thread.join()
 
 
+
+from enum import IntFlag
+
+class ImproviserStatus(IntFlag):
+    OFF = 1        # 00001
+    GETTING_MIDI = 2     # 00010
+    LISTENING = 4   # 00100
+    GENERATING = 8      # 01000
+    SHUTTING_DOWN = 16    # 10000
+    STARTING_UP = 32 
+
+    @staticmethod
+    def status_to_text(status:ImproviserStatus):
+        return ""
+
 class ImproviserAgent():
-    def __init__(self, memory_length:int, model:MIDIModel, tokenizer:MIDITokenizer, allow_gen_overlap=False, test_mode=False):
+    def __init__(self, input_length:int, output_length:int, model:MIDIModel, tokenizer:MIDITokenizer, allow_gen_overlap=False, test_mode=False):
         self.midiHandler = MidiDeviceHandler(self.receiveMIDI)
-        self.noteBuffer = RingBuffer(memory_length)
+        self.noteBuffer = RingBuffer(8192) # that should be plenty given it has a 4096 max context :)
+        self.midiNoteState = MIDINoteState()
+        self.midiQ = MIDIScheduler(self.midiHandler)
+
         self.start_time_s = time.time()
         self.bpm = 120 # not sure what to do with this one! 
         self.ticks_per_beat = 480 # 96 is a typical old-skool MIDI file tpb. 480 is more modern.
@@ -373,11 +395,14 @@ class ImproviserAgent():
         self.lock = threading.Lock() # to lock gneerate from multiple threads calling it
         self.stop_event = threading.Event()  # 
         self.test_mode = test_mode
-        self.midiNoteState = MIDINoteState()
-        self.midiQ = MIDIScheduler(self.midiHandler)
+
         self.gen_thread = None
         self.allow_gen_overlap = allow_gen_overlap
-        self.status = "starting up"
+
+        self.set_status(ImproviserStatus.OFF)
+        
+        self.input_length = 32
+        self.output_length = 32 
         
         
     def setModel(self, model:midi_model.MIDIModel):
@@ -389,6 +414,7 @@ class ImproviserAgent():
         the two threads controlling them so you can control
         threads outside this function 
         """
+        self.set_status(ImproviserStatus.GETTING_MIDI)
         self.midiHandler.getMIDIDevicesFromUser()
         return self.midiHandler.initMIDI()
         
@@ -405,6 +431,7 @@ class ImproviserAgent():
             # time since the start of this generation cycle 
             # if msg.velocity == 0:print("receiveMIDI zero velocity note mate!")
             event = ['note', int(onset_tick), int(len_ticks), 0, msg.note, on_vel]
+            # print(f"Adding event to ring buffer {event}")
             self.noteBuffer.addEvent(event)
             # if self.noteBuffer.isFull():# generate when the buffer is full
             #     self.generate()
@@ -446,8 +473,11 @@ class ImproviserAgent():
         beat_offsets = [round(eve[1]/tpb, 2) for eve in output[1] if eve[0] == 'note']
         print(f"analyse_output: chans {ch_count} ch1 events {ch1_events} tpb {tpb} beats {beat_offsets}")
   
-        
+    def set_status(self, status:ImproviserStatus):
+        self.status = status
+
     def get_status(self):
+        # print("Impro get status called")
         return self.status 
     
     def call_the_model(self):
@@ -485,9 +515,6 @@ class ImproviserAgent():
                 for track in gen_events[1:]:# first one is tpb
                     for score_msg in track:
                         self.sendMIDI(score_msg)
-
-            # self.lock.release()
-        
             finally:
                 # Release the lock after completion
                 self.lock.release()
@@ -501,15 +528,15 @@ class ImproviserAgent():
         
 
         
-    def run(self):
+    def _run(self):
         """
         starts the improvisers runtime loop in a thread
         returns the thread for external thread management 
         """
         while not self.stop_event.is_set():
-            self.status = "Listening"
+            self.set_status(ImproviserStatus.LISTENING)
             time.sleep(5)  # Wait for note collection
-            self.status = "Generating"
+            self.set_status(ImproviserStatus.GENERATING)
  
             if (self.allow_gen_overlap) or (self.midiQ.isEmpty()):
                 print(f"Q empty: {self.midiQ.isEmpty()} allow overlap {self.allow_gen_overlap}")
@@ -520,22 +547,29 @@ class ImproviserAgent():
 
     
     def start(self):
-        self.status = "Improviser starting up"
+        self.set_status(ImproviserStatus.STARTING_UP)
         self.stop_event.set() 
         if self.gen_thread is not None: self.gen_thread.join()
         self.stop_event.clear()
         # Start a new thread to run the thread_function
-        self.gen_thread = threading.Thread(target=self.run)
+        self.gen_thread = threading.Thread(target=self._run)
         self.gen_thread.start()
     
 
     def stop(self):
-        self.status = "Improviser shutting down"
-        print("Stopping improviser ...")
+        self.set_status(ImproviserStatus.SHUTTING_DOWN)
         self.stop_event.set() 
         self.midiHandler.stop()
         self.midiQ.stop()
 
         self.gen_thread.join()
+        self.set_status(ImproviserStatus.OFF)
 
         
+    def setInputLength(self, length):
+        self.input_length = length 
+        print(f"Input Length set to: {length}")
+    
+    def setOutputLength(self, length):
+        self.output_length = length 
+        print(f"Output Length set to: {length}")

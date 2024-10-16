@@ -4,10 +4,12 @@
 
 ## Finalising mark's system for Sat
 
-- sort out the double midi init thing on live_web script
+X - sort out the double midi init thing on live_web script
+  -> couldn't quite figure out why it calls that code twice, but pushed initMIDI to the start button callback
 - sort out the input controls so can vary length of input (and output?)
-- try audio interface on the other USB socket (right) for a laugh
-- make sure classic version is available
+x- try audio interface on the other USB socket (right) for a laugh tried a thunderbolt cable. Seemed to be solid @441k 256,n=3 
+- make sure markov system plugins available
+- make some notes about the model structure
 
 ## Moving on from the ring buffer
 
