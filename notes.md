@@ -1,5 +1,115 @@
 # Notes on building Barcelona system
 
+# 16/10/2024
+
+## Finalising mark's system for Sat
+
+- sort out the double midi init thing on live_web script
+- sort out the input controls so can vary length of input (and output?)
+- try audio interface on the other USB socket (right) for a laugh
+- make sure classic version is available
+
+## Moving on from the ring buffer
+
+* Ring buffer thing: 
+  - maybe just have a long event memory (4096 since that's the max. context) and then choose how much of it to pass in as context
+  - so the memory can have a 'getMemory(length_in_seconds)'
+    -> that passes back the last 'length_in_seconds' seconds of notes
+  * then as a counterpart, when generating we might figure out how to stop when we get a certain length
+     into the future. But the input is the first and easiest one to crack
+
+# 14/10/2024
+
+Working on improved generator and midi note control. Main issues:
+
+- MIDI messages in context are stored in a ring buffer that does not know about time
+  -> add a mode to the ring buffer where it only wraps after a certain time has passed
+- generation always triggered every x seconds
+DONE  -> at least add a 'do not regen if you are still playing out the previous output'
+- output from gen seems to last quite a long time
+  -> if waiting for end before re-gen, might get a bit tedious. 
+DONE   -> maybe two modes... overlap or not overlap
+
+DONE - coupling between input lengtha and output length
+  -> input length seems to be tied to output length
+   -> ideally, I would want them independent. E.g. having input context be long enough for the last 5 seconds of notes 
+   -> I fixed this with the import torch.functional as F call which previously crashed it (duh)
+
+## Notes on test_gen.py
+
+I wrote a small test script to generate from the model in various ways. I totally broke the sytem at one point after some careless hacking around in the generator code but i did also idenify some weirdness there and renamed some variables to make it more readable. Basically, the length of time notes go into the future is proportional to the number of times you call forward, ultimately. Which kinda makes sense. Here's some figures:
+
+ at 120 BPM max len 8, last beat at this offset in seconds 1.96875
+ at 120 BPM max len 16, last beat at this offset in seconds 3.5625
+ at 120 BPM max len 32, last beat at this offset in seconds 7.4375
+ at 120 BPM max len 64, last beat at this offset in seconds 16.09375
+ at 120 BPM max len 128, last beat at this offset in seconds 35.78125
+
+So in an improvisation context, you might want to vary the output length between 8 and 32 to get a 1->7 second range of output. 
+
+Then you can vary the input length as well, e.g. have very short input and very short output for a highly interactive mode 
+
+
+# 12/10/2024
+
+## Removing overlap events
+
+I think overlapping events are a problem. In fact the midi and the way it manages midi events is a problem too. Fix those! But keep the golden version oIs it f the system as a branch in case it was a freakish hit :) 
+
+## Audio quality
+
+Was hearing too-frequent zipper noises in the audio. Tried stripping out all the plugins (esp. yabridge windows ones). I /think/ that running jackd from the command line instead of qjackctl improved things - presume the default settings on CLI work better? Tried 44k, 88k, 96k. Did not hear it on 44 or 88 but did on 96, though I was abusing MIDI device in the 96k test. In fact, it seems the a2j thing i use to get MIDI into reaper is complaining at the end of the xrun blitz. Very difficult to debug since I cannot reproduce the issue with any consistency. Not great. Is it yabridge? Is it heavy and iffy MIDI data from the model? 
+
+## Black screening
+
+Black screen happened twice or three times. Not good but the screen mode option seems to fix it,though not clear if that'll work when only on laptop screen. Could it be the auto VRAM thing in the bios? Maybe just set it to 2gig and see if it happens? 
+
+## Some quick tests with the multi-track model
+
+Tried the non-finetuned model. Behaviour obviously very different. Probably not as good - tends to go for lots of dramatic scales in response to freestyle sax.
+
+# 11/10/2024
+
+## Pitch to MIDI
+
+After convincing proof of concept session with Mark, I now am happy to go live for the Mark presentations with the system more or less 'as-is'. 
+
+Then I switched focus to the Finn version of the algorithm. Did a lot of mucking the the aim of getting a monophonic audio->MIDI plugin going, to see how good it was. I could then make a decision about the approach to take for live audio->algorithm connection. I found a free windows plugin called DODO MIDI 2 which works pretty well with the 'pre-gain' dialed down on Finn's sax signals. Tricky bit was getting windows plugins to run well on Linux. Did that with a tool called yabridge which seems to work quite well. I am getting occasional audio glitches but only (I think) when I muck about with my plugin chains whilst playing back audio. It'll probably be ok. Worst case, I can just run the plugins in actual windows. I'll keep doing it in linux and see how it goes. 
+
+I managed to get quite accurate and responsive transcription of finn's sax samples from dod midi with a slightly reduced 'pre-gain' value. 
+
+## Better pianos
+
+I also did a bit of searching for better piano sounds. Found what claimed to be a detailed sampling of a nice grand in sfz format. Then found a windows plugin called 'sforzando' that can load sfz format. Seemed to be really quiet though, so had to put a slightly scary volumne booster plugin in the chain. Does sound quite rich and dynamic though. Also found that the LA dataset has another piano sound font which is actually pretty good and plays in linux native juicy sound font. It has proper volume levels and cuts through a bit more, so i'll probably use that one. Might look for a linux native sfz plugin though.
+
+Conclusion: the windows sfz player with the big piano sounds reallu good but is quiet/ posibly over-dynamic?? and I'm a bit dubious of that windows-linux bridge stuff. '
+
+This one https://github.com/osxmidi/SFZero-X/releases/tag/0.6 is a native linux sfz player but it pre-loads all the samples, unlike the progressive loading sforzando meaning it makes the DAW project take forever to load, especially if you have two instance. 
+
+The LA dataset has some decent pianos as sound fonts that work well in juicysf plugin, so probably just use those! 
+
+
+# 10/10/2024
+
+Preparing for first demo with Mark today. Want to work on some parameterisation of the behaviour of the system ideally controlled via a GUI, noting my list of random thoughts below after first successful test run of live improv. 
+
+Things to do for Mark session:
+
+DONE  * Fix stuck note-off in Q problem
+DONE  * Build rudimentary UI for live_gen
+  
+NOT done  * GUI: Note density (% chance any given note is played)
+
+DONE  * GUI: Time filter - only allow notes up to a certain time in the future 
+
+NOT done but figured out solution  * GUI: time frame: do not use ring buffer, instead just capture everything in a time frame without wrapping. could just make ring buffer very long
+  
+## Side note
+
+Since I started work on the system, SkyTNT suddenly started updating the code after a 1 year hiatus. There is a v2 midi tokenizer which seems to include something about tempo information (presume that requires a re-train) and some sort of caching (kv cache) that apparently improves performance. My main performance bottleneck is the inference so not sure how much i'd gain from that. Still, TODO: clone latest repo and do some speed tests on inference to see how it goes. There is also a citation bibtex on the github repo which is good. 
+
+Also, I would like to try my own tokenizer eventually, more events and rests than notes and durations style. I wonder if the whole 'tokenize notes with offset and durations' thing is just a hack to solve time problem i.e. putting notes into the future is easier as the tokenisation explicitly encodes offset from now and duration. This is quite different than natural language modelling as that has no sense of how long a word lasts aside from the number of tokens that make up a word maybe? Interesting stuff there. Would be good to write about the different tokenization approaches as it has a 'history of music tech.' angle to it as well. 
+
 # 08/10/2024
 
 Today was a big day as I started testing the live interaction experience. Setup was as follows:
@@ -41,6 +151,9 @@ Results are really cool. But lots of things to dial in/ options to put on a 'use
 - it plays at the same time as you
   * note density metric for live input: decide when to play/ more subtle: auto-set output note density to complement input note density 
 
+- different models. 
+  * Really want to try the multichannel model!
+  * Check out how it goes about selecting channels in the generator app code. 
 
 # 06/10/2024
 
