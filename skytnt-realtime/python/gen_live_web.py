@@ -130,7 +130,8 @@ def toggle_self_listen_mode(checkbox_value):
 
 # Run the Dash app
 if __name__ == '__main__':
-    ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
+    ckpt = "../../trained-models/skytnt-pre-trained-la-dataset.ckpt"
+    # ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
 
     assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt
 

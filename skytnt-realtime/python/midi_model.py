@@ -46,7 +46,6 @@ class MIDIModel(pl.LightningModule):
         :param x: (batch_size, midi_sequence_length, token_sequence_length)
         :return: hidden (batch_size, midi_sequence_length, n_embd)
         """
-
         # merge token sequence
         x = self.net.embed_tokens(x)
         x = x.sum(dim=-2)
@@ -54,6 +53,13 @@ class MIDIModel(pl.LightningModule):
         return x.last_hidden_state
 
     def sample_top_p_k(self, probs, p, k):
+        """
+        Top-k: Works well when you want to ensure that you're sampling from the most likely tokens, but this may introduce repetitive patterns.
+        Top-p: Works better for balancing diversity with quality since it dynamically adjusts how many tokens are considered, depending on the distribution.
+        Both: The combination is used to get the best of both worlds. You cap the maximum number of tokens (via top-k) while retaining flexibility (via top-p) to ensure that only tokens contributing significantly to the probability mass are considered.
+        @param p: increase this to diversify the tokens and reduce determinism (same input, same output)
+        @param k: incease this for more diversity but less coherence (coherence as internally consistent output)
+        """
         probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
         probs_sum = torch.cumsum(probs_sort, dim=-1)
         mask = probs_sum - probs_sort > p
