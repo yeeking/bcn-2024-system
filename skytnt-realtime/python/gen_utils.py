@@ -192,7 +192,7 @@ class RingBuffer:
     """
     circular / ring buffer
     """
-    def __init__(self, size):
+    def __init__(self, size:int):
         self.size = size
         self.lock = threading.Lock()
         self.reset()
@@ -205,7 +205,25 @@ class RingBuffer:
     def getEvents(self):
         with self.lock:
             return list(self.array)
-    
+
+    def getLatestItems(self, want_n):
+        """
+        returns items from last stored backwards by 'want_n' steps
+        want_n is capped at len(self.array) so it does not repeat items if 
+        you ask for too many 
+        """
+        with self.lock:
+            items = []
+            if len(self.array) < want_n: want_n = len(self.array)
+            sub_ind = self.index - 1# index is always pointing at next memory write slot
+            if sub_ind == -1: sub_ind = len(self.array) - 1 # edge case where index == 0
+            for i in range(0, want_n):
+                print(sub_ind)
+                items.append(self.array[sub_ind])
+                sub_ind = sub_ind - 1
+                if sub_ind < 0: sub_ind = len(self.array)-1
+            return list(items)
+
     def isFull(self):
         """
         return true if the index is pointing to the last position
@@ -377,7 +395,9 @@ class ImproviserStatus(IntFlag):
     STARTING_UP = 32 
 
     @staticmethod
-    def status_to_text(status:ImproviserStatus):
+    def status_to_text(status:int):
+        if status == ImproviserStatus.OFF: return "off"
+
         return ""
 
 class ImproviserAgent():
