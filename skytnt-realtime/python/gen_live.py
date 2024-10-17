@@ -17,6 +17,7 @@ if __name__ == "__main__":
     
     improviser = ImproviserAgent(input_length=16, 
                                  output_length=32, 
+                                 remember_output=True, 
                                 model=model, 
                                 tokenizer=tokenizer,
                                 allow_gen_overlap=False,  

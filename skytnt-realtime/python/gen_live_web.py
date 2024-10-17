@@ -49,6 +49,15 @@ app.layout = html.Div([
             value=0,  # Default value: corresponding to 8
         ),
     ]),
+    # Adding a checkbox (Checklist) to toggle self-listen mode
+    html.Div([
+        html.Label("Toggle Self-listen Mode"),
+        dcc.Checklist(
+            id='self-listen-checkbox',
+            options=[{'label': 'Enable Self-listen Mode', 'value': 'enable'}],
+            value=[],  # Initially not checked
+        )
+    ]),
     
     html.Button('Start improviser', id='start-button', n_clicks=0),
     html.Div(id='improviser-start-status', style={'font-size': '24px', 'color': 'green'}),
@@ -108,6 +117,17 @@ def update_output_length(slider_val):
     improviser.setOutputLength(length)
     return slider_val
 
+
+# Callback to handle the self-listen mode checkbox
+@app.callback(
+    Output('self-listen-checkbox', 'value'),
+    [Input('self-listen-checkbox', 'value')]
+)
+def toggle_self_listen_mode(checkbox_value):
+    enabled = 'enable' in checkbox_value
+    improviser.setSelfListenMode(enabled)  # Set self-listen mode on improviser
+    return checkbox_value
+
 # Run the Dash app
 if __name__ == '__main__':
     ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
@@ -122,7 +142,10 @@ if __name__ == '__main__':
     ## with 32 memory length and 5 second auto-regen mode
     ## and the la->hawthorne fine tune model: version_703-la-hawthorne-finetune.ckpt 
     #improviser = ImproviserAgent(memory_length=32, model=model, tokenizer=tokenizer, test_mode=False) 
-    improviser = ImproviserAgent(input_length=32, output_length=32, model=model, tokenizer=tokenizer, test_mode=False) 
+    improviser = ImproviserAgent(input_length=32, 
+                                output_length=32, 
+                            remember_output=True, 
+                                model=model, tokenizer=tokenizer, test_mode=False) 
 
     # improviser.initMIDI() # select MIDI inputs and outputs
     # improviser.start() # start responding to MIDI input 

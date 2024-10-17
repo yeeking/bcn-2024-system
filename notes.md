@@ -3,56 +3,13 @@
 # 17/10/2024
 
 Working on new input output length logic. 
-* Add a function to the ring buffer so it always sends the n most recent items, even when it wraps around, noting that it writes new items at index and increments index. So most recent n items = 
+DONE * Add a function to the ring buffer so it always sends the n most recent items, even when it wraps around, noting that it writes new items at index and increments index. So most recent n items = 
+
+* verify can adjust input and output with the UI
+
+* Mix in for auto-regression... so it has memory of its own notes as well as human's - better to continue ideas?
 
 
-e.g.: 
-[10,20,30,40,50,60]
-       |<-index is 3 
-
-get n=3: 
--> 20,      30,    40
-   index-n          index
-so start = index - n
-   end = index 
-
-but if n=5:
-[10,20,30,40,50,60]
-       | <- index is 3
-
-60,10,20,30,40,
-
-if n=6:
-50,60,10,20,30,40
-
-
-
-decide if one or two stages:
-if index - n < -1: extra_stage = True
-else: extra_stage = False
-
-
-two stages:
-get from 
-index - n +1 to index
-
-
-def get_latest_items(n):
-   
-
-available = len(array) - index
-add_extra = False
-if available < want:
-   add_extra = True
-   extra_start = len(array) - (want-available)
-   extra_end = len(array)
-
-
-if index - n < 0:
-  most recent items = array [array_length]  array[0:index] 
-index -> index - n
-
- that the call_the_model function is correctly 
 
 # 16/10/2024
 
