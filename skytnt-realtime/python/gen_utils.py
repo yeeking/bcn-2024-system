@@ -218,7 +218,6 @@ class RingBuffer:
             sub_ind = self.index - 1# index is always pointing at next memory write slot
             if sub_ind == -1: sub_ind = len(self.array) - 1 # edge case where index == 0
             for i in range(0, want_n):
-                print(sub_ind)
                 items.append(self.array[sub_ind])
                 sub_ind = sub_ind - 1
                 if sub_ind < 0: sub_ind = len(self.array)-1
@@ -421,8 +420,8 @@ class ImproviserAgent():
 
         self.set_status(ImproviserStatus.OFF)
         
-        self.input_length = 32
-        self.output_length = 32 
+        self.input_length = input_length
+        self.output_length = output_length
         
         
     def setModel(self, model:midi_model.MIDIModel):
@@ -512,20 +511,21 @@ class ImproviserAgent():
             try:
             # Critical section that should be thread-safe
                 print("Generating improvisation...")
-                input_events = [copy.copy(e) for e in self.noteBuffer.array if e != None]
+                # input_events = [copy.copy(e) for e in self.noteBuffer.array if e != None]
+                input_events = [e for e in self.noteBuffer.getLatestItems(self.input_length) if e is not None] # filter nones
                 if len(input_events) == 0:
                     print("No context yet...")
                     return  
                 # now reset the ring buffer so we can capture more events whilst they continue to play
-                self.noteBuffer.reset()
+                # self.noteBuffer.reset()
                 # and reset the start time for the events we will now capture 
                 self.start_time_s = time.time() # reset start time for next frame 
-                print(f"Sending {len(input_events)} to the model")
+                # print(f"Sending {len(input_events)} to the model")
                 input_events = [self.ticks_per_beat] + [input_events]
                 # output_events = self.generate(input_events)
                 gen_events = ModelHandler.generate_midi_seq(self.model, self.tokenizer, 
-                            input_events,
-                            output_len=self.noteBuffer.size, # generate as much as we give you
+                            score_format_input=input_events,
+                            output_len=self.output_length, # generate as much as we give you
                             temp=0.7, 
                             top_p=0.5, #0.1 to 1.0
                             top_k=1, #1 to 20 
@@ -555,14 +555,14 @@ class ImproviserAgent():
         """
         while not self.stop_event.is_set():
             self.set_status(ImproviserStatus.LISTENING)
-            time.sleep(5)  # Wait for note collection
+            time.sleep(0.5)  # Wait for note collection
             self.set_status(ImproviserStatus.GENERATING)
  
             if (self.allow_gen_overlap) or (self.midiQ.isEmpty()):
-                print(f"Q empty: {self.midiQ.isEmpty()} allow overlap {self.allow_gen_overlap}")
+                # print(f"Q empty: {self.midiQ.isEmpty()} allow overlap {self.allow_gen_overlap}")
                 gen_events = self.call_the_model() # try to generate every x seconds regardless of what has come in
-            else:
-                print("Q not empty or no overlap allowed")
+            # else:
+            #     print("Q not empty or no overlap allowed")
             self.midiNoteState.reset() # clear off any outstanding notes    
 
     
