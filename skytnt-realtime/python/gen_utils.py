@@ -129,9 +129,32 @@ class ModelHandler:
         disable_patch_change = False
         disable_channels = None
 
-        tokens = tokenizer.tokenize(score_format_input)
+        # now here we could kick off with some clever shit to force it to 
+        # go mutti-channel but not now as its 10pm and it needs to work tomorrow :)
 
+        # number2drum_kits = {-1: "None", 0: "Standard", 8: "Room", 16: "Power", 24: "Electric", 25: "TR-808", 32: "Jazz",
+        #                     40: "Blush", 48: "Orchestra"}
+        # patch2number = {v: k for k, v in MIDI.Number2patch.items()}
+        # drum_kits2number = {v: k for k, v in number2drum_kits.items()}
+        # i = 0
+        # multi_tokens = [[tokenizer.bos_id] + [tokenizer.pad_id] * (tokenizer.max_token_seq - 1)]
+        # patches = {}
+        # instruments = ["Acoustic Grand", "Vibraphone", "Electric Guitar(jazz)",
+        #               "Electric Guitar(clean)", "Electric Guitar(muted)", "Overdriven Guitar", "Distortion Guitar",
+        #               "Electric Bass(finger)"]
+        # for instr in instruments:
+        #     print(instr)
+        #     patches[i] = patch2number[instr]
+        #     i = (i + 1) if i != 8 else 10
+        # for i, (c, p) in enumerate(patches.items()):
+        #     multi_tokens.append(tokenizer.event2tokens(["patch_change", 0, 0, i, c, p]))
+
+
+        # tokens = multi_tokens + tokenizer.tokenize(score_format_input)
+        # this is the original version that just uses the sent score events
+        tokens = tokenizer.tokenize(score_format_input)
         mid = np.asarray(tokens, dtype=np.int64)
+
         # print(f"Final midi format for model. Shape: {mid.shape}")
         # mid = mid[:int(max_input_len)] # if want to use a subset of the inputs 
 

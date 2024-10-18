@@ -110,6 +110,7 @@ def run(tab, instruments, drum_kit, mid, midi_events, gen_events, temp, top_p, t
         if instruments is None:
             instruments = []
         for instr in instruments:
+            # print("getting patches ", instr)
             patches[i] = patch2number[instr]
             i = (i + 1) if i != 8 else 10
         if drum_kit != "None":
@@ -132,6 +133,10 @@ def run(tab, instruments, drum_kit, mid, midi_events, gen_events, temp, top_p, t
     init_msgs = [create_msg("visualizer_clear", None)]
     for tokens in mid_seq:
         init_msgs.append(create_msg("visualizer_append", tokenizer.tokens2event(tokens)))
+    score = tokenizer.detokenize(mid)
+    with open(f"warmup.mid", 'wb') as f:
+        f.write(MIDI.score2midi(score))
+    
     yield mid_seq, None, None, send_msgs(init_msgs, msgs_history), msgs_history
     generator = generate(mid, max_len=max_len, temp=temp, top_p=top_p, top_k=top_k,
                          disable_patch_change=disable_patch_change, disable_control_change=not allow_cc,

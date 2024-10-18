@@ -5,6 +5,7 @@ import os
 from midi_model import MIDIModel
 from midi_tokenizer import MIDITokenizer
 import tqdm
+import torch.nn.functional as F
 
 def load_model(path, model:MIDIModel):
     """
@@ -76,8 +77,8 @@ def generate(model:MIDIModel, tokenizer:MIDITokenizer, prompt=None, max_len=512,
                     event_name = tokenizer.id_events[eid]
                 else:
                     next_token_seq = torch.cat([next_token_seq, sample], dim=1)
-                    if len(tokenizer.events[event_name]) == i:
-                        break
+                    # if len(tokenizer.events[event_name]) == i:
+                    #     break
             if next_token_seq.shape[1] < max_token_seq:
                 next_token_seq = F.pad(next_token_seq, (0, max_token_seq - next_token_seq.shape[1]),
                                        "constant", value=tokenizer.pad_id)
@@ -111,6 +112,8 @@ def generate_midi_seq(model:MIDIModel, tokenizer:MIDITokenizer, midi_filename, n
         mid = file.read()
     mid = tokenizer.tokenize(MIDI.midi2score(mid))
     mid = np.asarray(mid, dtype=np.int64)
+    if n_events_from_file > len(mid):
+        n_events_from_file = len(mid)
     mid = mid[:int(n_events_from_file)]
     max_len += len(mid)
     for token_seq in mid:
@@ -133,7 +136,9 @@ def generate_midi_seq(model:MIDIModel, tokenizer:MIDITokenizer, midi_filename, n
 def run():
     # ckpt = "small.ckpt"
     ckpt = "../models/small.ckpt"
-    midi_file = 'input.mid'
+    ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
+
+    midi_file = 'warmup.mid'
 
     assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt
     assert os.path.exists(midi_file), "Cannot find MIDI file " + midi_file
