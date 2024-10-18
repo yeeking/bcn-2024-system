@@ -1,19 +1,44 @@
 # Notes on building Barcelona system
 
+# 18/10/2024
+
+## Preparing for Saturday
+
+I started by planning out the talk for Saturday. Made some slides and sent to Mark. He is happy with the slides. 
+
+I then spent the rest of the morning getting the markov model to work properly, which was really just a case of compiling it and testing. 
+
+Then I went about getting the parrot model to work which involved me creating a new plugin and mucking about with JUCE's midi buffers to argue the thing into storing the correct timestamps for the items. Got it working and put a gui slider on it to vary the delay. Simples. 
+
+## Multi-track model
+
+I experimented with the multi-track model. The dream i had was that I could somehow trigger it to create all kinds of cool layers with different instruments when you just feed it a single line. This does not work - it does not seem to generate outside of the channel you sent it. So I tried to hack it around:
+
+* take a single channel of input and stripe it - each note, move to the next track modded on 8. So you get the notes spread across the tracks
+* This kind of worked in that the multi-track model did send back some other channels. But it kinda sucks - not interesting for the finn sax input, for example. 
+* Then I tried just duplicating the single channel of input across all 8 channels. It seems that the different channels actually respond quite similarly - not very interesting. I was expecting that different channels would respond differently to the same input, since presumably they'd been trained on different things. 
+
+
+
+
+
 # 17/10/2024
 
 Working on new input output length logic. 
 DONE * Add a function to the ring buffer so it always sends the n most recent items, even when it wraps around, noting that it writes new items at index and increments index. So most recent n items = 
 
-* verify can adjust input and output with the UI
+X * verify can adjust input and output with the UI
 
-* Mix in for auto-regression... so it has memory of its own notes as well as human's - better to continue ideas?
+X * Mix in for auto-regression... so it has memory of its own notes as well as human's - better to continue ideas?
 
 
 
 # 16/10/2024
 
-## Finalising mark's system for Sat
+## Next steps with the sax version
+
+
+## Finalising mark's system for Sat. DOME
 
 X - sort out the double midi init thing on live_web script
   -> couldn't quite figure out why it calls that code twice, but pushed initMIDI to the start button callback
@@ -21,6 +46,7 @@ X - sort out the double midi init thing on live_web script
 x- try audio interface on the other USB socket (right) for a laugh tried a thunderbolt cable. Seemed to be solid @441k 256,n=3 
 - make sure markov system plugins available
 - make some notes about the model structure
+- tried running on CPU. Works but generation takes quite long, not ideal! 
 
 ## Moving on from the ring buffer
 

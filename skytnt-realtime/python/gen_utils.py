@@ -12,13 +12,15 @@ import os
 import copy 
 import heapq
 from collections import defaultdict
-import torch.functional as F
+import torch.nn.functional as F
+import MIDI
 
 class ModelHandler:
     def __init__():
         pass
 
 
+    @staticmethod
     def load_model(path, model:MIDIModel):
         """
         load a python model from the sent checkpoint
@@ -482,6 +484,7 @@ class ImproviserAgent():
         vel = msg[5]
         start = msg[1]
         dur = msg[2]
+        ch = msg[3]
 
         # work out the time delta in ms
         secs_per_tick = (60.0 / self.bpm) / self.ticks_per_beat
@@ -489,8 +492,8 @@ class ImproviserAgent():
         note_on_offset_s = (60.0 / self.bpm) * beat_offset
         note_off_offset_s = note_on_offset_s + (secs_per_tick * dur)
         
-        onMsg = mido.Message('note_on', note=note, velocity=vel)
-        offMsg = mido.Message('note_off', note=note, velocity=vel)
+        onMsg = mido.Message('note_on', note=note, velocity=vel, channel=ch)
+        offMsg = mido.Message('note_off', note=note, velocity=vel, channel=ch)
         
         self.midiQ.addMIDIMsg(onMsg, note_on_offset_s * 1000)
         self.midiQ.addMIDIMsg(offMsg, note_off_offset_s * 1000)
@@ -516,6 +519,38 @@ class ImproviserAgent():
         return ImproviserStatus.status_to_text(self.status)
         # return self.status 
     
+    @staticmethod
+    def shift_events_to_multitrack(score_format_events):
+        """
+        Receives events in the format [["note", ...params...], ["note" ... params... ]]
+        which are all on the same track and spreads them across several tracks. 
+        so [[t1_event1][t1_event2]] -> [[[t1_event1][t1_event2]], [[t2_event1][t2_event2]]]
+        Useful for forcing the model to output multitrack stuff
+        """
+        # simple stripe mode
+        # print("shift eves input ", score_format_events)
+        # max_tracks = 8
+        # tracks = [[] for i in range(max_tracks)] # 8 arrays 
+        # track = 0
+        # for e in score_format_events:
+        #     e[3] = track # change the channel
+        #     tracks[track].append(e)
+        #     track = (track + 1) % max_tracks
+        # print("shift events output ", tracks)
+
+        # this version just copies everything to every channel 
+        max_tracks = 8
+        tracks = [[] for i in range(max_tracks)] # 8 arrays 
+        track = 0
+        for e in score_format_events:
+            for track in range(0, max_tracks):
+                e2 = copy.deepcopy(e)
+                e2[3] = track # change the channel
+                if np.random.random() > 0: 
+                    tracks[track].append(e2) 
+
+        return tracks
+
     def call_the_model(self):
         """
         convert the current contents of the ring buffer into 
@@ -527,7 +562,7 @@ class ImproviserAgent():
         if self.lock.acquire(blocking=False):
             try:
             # Critical section that should be thread-safe
-                print("Generating improvisation...")
+                # print("Generating improvisation...")
                 # input_events = [copy.copy(e) for e in self.noteBuffer.array if e != None]
                 input_events = [copy.copy(e) for e in self.noteBuffer.getLatestItems(self.input_length) if e is not None] # filter nones
                 if len(input_events) == 0:
@@ -541,9 +576,16 @@ class ImproviserAgent():
                 # and reset the start time for the events we will now capture 
                 self.start_time_s = time.time() # reset start time for next frame 
                 # print(f"Sending {len(input_events)} to the model")
-                input_events = [self.ticks_per_beat] + [input_events]
+                input_events = ImproviserAgent.shift_events_to_multitrack(input_events)
+                input_events = [self.ticks_per_beat] + input_events
+                print("Analysing input")
+                self.analyse_output(input_events)
+
+                # input_events = [self.ticks_per_beat] + [input_events]
+                
                 # output_events = self.generate(input_events)
                 self.set_status(ImproviserStatus.GENERATING)
+                print(input_events)
 
                 gen_events = ModelHandler.generate_midi_seq(self.model, self.tokenizer, 
                             score_format_input=input_events,
@@ -553,6 +595,7 @@ class ImproviserAgent():
                             top_k=1, #1 to 20 
                             allow_cc=False, # True or False
                             amp=True, use_model=(self.test_mode == False), show_bar=False) # True or False  
+                print("Analysing output")
                 self.analyse_output(gen_events)
                 for track in gen_events[1:]:# first one is tpb
                     for score_msg in track:
