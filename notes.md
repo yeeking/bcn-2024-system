@@ -1,5 +1,15 @@
 # Notes on building Barcelona system
 
+# 24/10/2024
+
+Making changes for second session with Finn:
+
+- reset button on web interface that wipes the memory
+- visualisation of last MIDI prompt
+- visualisation of incoming MIDI??
+- is dash the best interface...
+
+
 # 23/10/2024
 
 Today Finn played live with the system for the first time using some sonobus streaming. 
@@ -9,6 +19,7 @@ The setup was is shown in the xournal sketch in the dropbox.
 He enjoyed playing but I think he was keen to feel like it was directly responding. Tried different input/ output lengths and varied the overlap function. I think we need a clear MIDI visualisation showing the MIDI that forms the prompt. Also, the idea that the prompt represents a period of time, not a number of notes. That way you can guarantee a response to the last few seconds.
 
 For tomorrow's session: 
+- add a reset button to the interface
 - get a prompt visualisation going which finn ideally can see 
 - implement the time frame idea
 - other audio to MIDI convertor??

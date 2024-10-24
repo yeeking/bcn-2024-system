@@ -1,52 +1,63 @@
 import dash
 from dash import dcc, html
+import plotly.graph_objs as go
 from dash.dependencies import Input, Output
-import threading
-import time
-import datetime
+import pandas as pd
+import numpy as np
 
-# Clock class that runs in a background thread and calls a UI update callback
-class Clock:
-    def __init__(self):
-        self.running = True
-        self.current_time = datetime.datetime.now().strftime("%H:%M:%S")
-        self.thread = threading.Thread(target=self.run)
-        self.thread.daemon = True
-        self.thread.start()
+# Example data
+musical_events = [
+    ['note', 145, 78, 0, 72, 59],
+    ['note', 212, 87, 0, 70, 66],
+    ['note', 151, 190, 0, 58, 17],
+    ['note', 298, 47, 0, 65, 58]
+]
 
-    def run(self):
-        while self.running:
-            self.current_time = datetime.datetime.now().strftime("%H:%M:%S")
-            time.sleep(1)
+# Convert list of events to a pandas DataFrame
+data = pd.DataFrame(musical_events, columns=['event', 'start_time', 'duration', 'channel', 'note', 'velocity'])
 
-    def get_time(self):
-        return self.current_time 
-    
-    def stop(self):
-        self.running = False
+# Create the piano roll figure
+def create_piano_roll(data):
+    traces = []
+    for _, row in data.iterrows():
+        traces.append(
+            go.Scatter(
+                x=[row['start_time'], row['start_time'] + row['duration']],
+                y=[row['note'], row['note']],
+                mode='lines',
+                line=dict(width=10),
+                name=f"Note {row['note']}"
+            )
+        )
+
+    layout = go.Layout(
+        title='Piano Roll',
+        xaxis=dict(title='Time'),
+        yaxis=dict(title='Note', autorange='reversed'),
+        showlegend=False
+    )
+
+    fig = go.Figure(data=traces, layout=layout)
+    return fig
 
 # Dash app setup
 app = dash.Dash(__name__)
 
-# Create the clock instance and pass it the update_ui_time callback
-clock = Clock()
-
-# Dash app layout
 app.layout = html.Div([
-    html.H1("Real-Time Clock with Background Thread and Callback"),
-    html.Div(id='time-display', style={'font-size': '48px'}),
+    dcc.Graph(id='piano-roll-plot'),
     dcc.Interval(
-        id='update-time-trigger',
-        interval=1000,  # in milliseconds (1 second)
+        id='update-interval',
+        interval=1000,  # in milliseconds
         n_intervals=0
     )
 ])
 
-@app.callback(Output('time-display', 'children'),[Input('update-time-trigger', 'n_intervals')])
-def update_time(n):
-    return f"The current time is: {clock.get_time()}"
-    
-# Run the Dash app
-if __name__ == '__main__':
-    app.run_server(debug=True, host='0.0.0.0')
+@app.callback(
+    Output('piano-roll-plot', 'figure'),
+    [Input('update-interval', 'n_intervals')]
+)
+def update_piano_roll(n_intervals):
+    return create_piano_roll(data)
 
+if __name__ == '__main__':
+    app.run_server(debug=True)

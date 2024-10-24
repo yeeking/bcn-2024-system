@@ -12,7 +12,8 @@ import os
 import copy 
 import heapq
 from collections import defaultdict
-import torch.functional as F
+import torch.nn.functional as F
+import traceback
 
 class ModelHandler:
     def __init__():
@@ -69,6 +70,7 @@ class ModelHandler:
             # while cur_len < max_len: 
             for step in range(0, max_len): # ensure we get the full length output
                 # print(f"Calling forward length is {cur_len} of {max_len} input shape is {input_tensor.shape} ")
+                
                 end = False
                 hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
                 next_token_seq = None
@@ -222,12 +224,35 @@ class RingBuffer:
 
     def addEvent(self, event):
         with self.lock:
+            # print(f"buffer got event {event}")
             self.array[self.index] = event
             self.index = (self.index + 1) % self.size
 
     def getEvents(self):
         with self.lock:
             return list(self.array)
+
+    def getItemsInTimeFrame(self, max_age:int, age_ind:int):
+        """
+        returns from newest to up to 'max_age'ms old
+        since the ringbuffer is generic and does not care what kind of data
+        you put into it, this function needs to be told which idnex in the data
+        in the buffer is the time value. it can then use that to filter anything 
+        with age >  newest_item_age - max_age  (since higher 'age' means more recent as its longer since the start time)
+        """
+        with self.lock:
+            items = []
+            newest = self.array[self.index-1][age_ind] # index-1 as index always points at next write slot 
+            oldest = newest - max_age
+            # assert oldest > 0, f"Error: oldest age is less than zero"
+            print(f"newest is {newest} so oldest is {oldest}")
+            for i,item in enumerate(self.array):
+                if (item is not None) and (item[age_ind] > oldest):
+                    # make it relative to the newest age 
+                    item[age_ind] = item[age_ind] - oldest
+                    items.append(item)
+            return items 
+            
 
     def getLatestItems(self, want_n):
         """
@@ -431,7 +456,7 @@ class ImproviserStatus(IntFlag):
         return ""
 
 class ImproviserAgent():
-    def __init__(self, input_length:int, output_length:int, remember_output:bool, model:MIDIModel, tokenizer:MIDITokenizer, allow_gen_overlap=False, test_mode=False):
+    def __init__(self, input_length:int, output_length:int, feedback_mode:bool, model:MIDIModel, tokenizer:MIDITokenizer, allow_gen_overlap=False, test_mode=False):
         """
         @param input_length: max number of note events sent to the model when inferring. 16 good :) Low (8-16): more responsive to recent MIDI, high (32+) remember older MIDI you sent it up to 4096 I think. 
         @param output_length: max number of note events to generate from the model each time. longer means it gets more into its own autoregressive mode as it feeds its own output back in
@@ -440,7 +465,7 @@ class ImproviserAgent():
         
         """
         self.midiHandler = MidiDeviceHandler(self.receiveMIDI)
-        self.noteBuffer = RingBuffer(8192) # that should be plenty given it has a 4096 max context :)
+        self.noteBuffer = RingBuffer(128) # that should be plenty given it has a 4096 max context :)
         self.midiNoteState = MIDINoteState()
         self.midiQ = MIDIScheduler(self.midiHandler)
 
@@ -460,7 +485,9 @@ class ImproviserAgent():
         
         self.input_length = input_length
         self.output_length = output_length
-        self.self_listen_mode = remember_output
+        self.feedback_mode = feedback_mode
+
+        self.last_input = []
         
         
     def setModel(self, model:midi_model.MIDIModel):
@@ -489,7 +516,8 @@ class ImproviserAgent():
             # time since the start of this generation cycle 
             # if msg.velocity == 0:print("receiveMIDI zero velocity note mate!")
             event = ['note', int(onset_tick), int(len_ticks), 0, msg.note, on_vel]
-            # print(f"Adding event to ring buffer {event}")
+            # print(f"Adding event to ring buffer {event}\n Memory len {len(self.noteBuffer.getLatestItems(self.input_length))}")
+            print(f"adding event {event}")
             self.noteBuffer.addEvent(event)
             # if self.noteBuffer.isFull():# generate when the buffer is full
             #     self.generate()
@@ -531,15 +559,11 @@ class ImproviserAgent():
         beat_offsets = [round(eve[1]/tpb, 2) for eve in output[1] if eve[0] == 'note']
         print(f"analyse_output: chans {ch_count} ch1 events {ch1_events} tpb {tpb} beats {beat_offsets}")
   
-    def set_status(self, status:ImproviserStatus):
-        self.status = status
 
-    def get_status(self):
-        # print("Impro get status called")
-        return ImproviserStatus.status_to_text(self.status)
-        # return self.status 
+
+
     
-    def call_the_model(self):
+    def call_the_model(self): 
         """
         convert the current contents of the ring buffer into 
         a score format event list as in MIDI.py score 
@@ -549,25 +573,17 @@ class ImproviserAgent():
         gen_events = None
         if self.lock.acquire(blocking=False):
             try:
-            # Critical section that should be thread-safe
-                print("Generating improvisation...")
-                # input_events = [copy.copy(e) for e in self.noteBuffer.array if e != None]
-                input_events = [copy.copy(e) for e in self.noteBuffer.getLatestItems(self.input_length) if e is not None] # filter nones
-                if len(input_events) == 0:
-                    print("No context yet...")
-                    return  
-                if len(input_events) < self.input_length:
-                    print("Mot enough input to generate yet. ")
-                    return 
-                # now reset the ring buffer so we can capture more events whilst they continue to play
-                if self.self_listen_mode == False: self.noteBuffer.reset()
+                # input_events = [copy.copy(e) for e in self.noteBuffer.getLatestItems(self.input_length) if e is not None] # filter nones                
+                input_events = self.noteBuffer.getItemsInTimeFrame(2000, 1)
                 # and reset the start time for the events we will now capture 
-                self.start_time_s = time.time() # reset start time for next frame 
+                # self.start_time_s = time.time() # reset start time for next frame 
+                
                 # print(f"Sending {len(input_events)} to the model")
+                self.last_input = copy.deepcopy(input_events)
                 input_events = [self.ticks_per_beat] + [input_events]
                 # output_events = self.generate(input_events)
                 self.set_status(ImproviserStatus.GENERATING)
-
+                print("Calling generate_midi_seq")
                 gen_events = ModelHandler.generate_midi_seq(self.model, self.tokenizer, 
                             score_format_input=input_events,
                             output_len=self.output_length, # generate as much as we give you
@@ -579,14 +595,20 @@ class ImproviserAgent():
                 self.analyse_output(gen_events)
                 for track in gen_events[1:]:# first one is tpb
                     for score_msg in track:
-                        if self.self_listen_mode: # eat your own dogfood
-                            self.noteBuffer.addEvent(score_msg)
+                        # if self.feedback_mode: # eat your own dogfood
+                        #     self.noteBuffer.addEvent(score_msg)
                         self.sendScoreEventAsMIDI(score_msg)
+                # reset the time window
+                
+                print("Generation complete.") 
+            except Exception as e:
+                # Store the exception in a variable
+                exc = e
+                traceback.print_exception(type(exc), exc, exc.__traceback__)
             finally:
                 # Release the lock after completion
                 self.lock.release()
-                print("Generation complete.") 
-
+                print("Releasing generation lock")
                 return gen_events
         else:
             # Lock is already acquired, reject the call
@@ -607,15 +629,19 @@ class ImproviserAgent():
                 self.set_status(ImproviserStatus.LISTENING)
             time.sleep(1.0)  # Wait for note collection
       
-            if (self.allow_gen_overlap) or (self.midiQ.isEmpty()):
-                # print(f"Q empty: {self.midiQ.isEmpty()} allow overlap {self.allow_gen_overlap}")
+            if (self.allow_gen_overlap) or (self.midiQ.isEmpty()): # can overlap agent playback or agent has played all notes
                 gen_events = self.call_the_model() # try to generate every x seconds regardless of what has come in
-            # else:
-            #     print("Q not empty or no overlap allowed")
-                #self.midiNoteState.reset() # clear off any outstanding notes    
+   
 
+    ### these are the functions to call to change modes etc. 
+    ###
+    ###
+    ###
     
     def start(self):
+        """
+        start listening and generating
+        """
         self.set_status(ImproviserStatus.STARTING_UP)
         self.stop_event.set() 
         if self.gen_thread is not None: self.gen_thread.join()
@@ -624,8 +650,10 @@ class ImproviserAgent():
         self.gen_thread = threading.Thread(target=self._run)
         self.gen_thread.start()
     
-
     def stop(self):
+        """
+        stop listening and generating 
+        """
         self.set_status(ImproviserStatus.SHUTTING_DOWN)
         self.stop_event.set() 
         self.midiHandler.stop()
@@ -633,6 +661,14 @@ class ImproviserAgent():
 
         self.gen_thread.join()
         self.set_status(ImproviserStatus.OFF)
+
+    def resetMemory(self):
+        """
+        clear the input memory 
+        """
+        print("Impro: resetMemory ")
+        self.midiNoteState.reset()
+        self.noteBuffer.reset() 
 
         
     def setInputLength(self, length):
@@ -643,6 +679,39 @@ class ImproviserAgent():
         self.output_length = length 
         print(f"Output Length set to: {length}")
 
-    def setSelfListenMode(self, enabled:bool):
-        self.self_listen_mode = enabled
+    def setFeedbackMode(self, enabled:bool):
+        self.feedback_mode = enabled
         print(f"Self-listen mode set to: {enabled}")
+    
+    def setOverlapMode(self, enabled:bool):
+        self.allow_gen_overlap = enabled
+        print(f"allow_gen_overlap set to: {enabled}")
+
+    def set_status(self, status:ImproviserStatus):
+        self.status = status
+
+    def get_status(self, markdown_mode=False):
+        """
+        get a text description of status of behaviour and parameters
+        """
+        # print("Impro get status called")
+        current_action = ImproviserStatus.status_to_text(self.status)
+        params = {"input length": self.input_length, 
+                  "output length": self.output_length, 
+                  "feedback": self.feedback_mode, 
+                  "overlap": self.allow_gen_overlap}
+        if markdown_mode:
+            breaker = "\n* "
+        else:
+            breaker = "\n"
+        param_state = breaker + breaker.join([k + ":" + str(params[k]) for k in params.keys()])
+        status = f"{breaker}Current action: {current_action} {param_state}"
+        # print(status)
+        return status
+    
+
+    def get_last_input(self):
+        """
+        returns the last input sent to the model 
+        """
+        return self.last_input
