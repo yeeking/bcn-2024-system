@@ -25,7 +25,7 @@ if __name__ == "__main__":
                                 allow_gen_overlap=False,  
                                 test_mode=False) 
     
-    improviser.initMIDI() # select MIDI inputs and outputs
+    improviser.initMIDIFromCLI() # select MIDI inputs and outputs
     improviser.start() # start responding to MIDI input 
 
     try:

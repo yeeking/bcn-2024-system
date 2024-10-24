@@ -295,9 +295,9 @@ class MidiDeviceHandler():
         self.output_port = None
         self.output_lock = threading.Lock()  # Lock to ensure thread safety for output
         self.stop_event = threading.Event()  # 
-
-    def getMIDIDevicesFromUser(self):
         mido.set_backend('mido.backends.rtmidi')
+       
+    def getMIDIDevicesFromUser(self):
         
         # Get and choose MIDI input device
         print("Available MIDI input devices:")
@@ -320,6 +320,22 @@ class MidiDeviceHandler():
         assert (output_device_index >= 0) and (output_device_index < len(midi_output_devices)), "Invalid MIDI output device chosen"
         self.output_device = midi_output_devices[output_device_index]
         print(f"Connecting to MIDI output: {self.output_device}")
+
+    def getMIDIInputs(self):
+        return mido.get_input_names()
+        
+    def getMIDIOutputs(self):
+        return mido.get_output_names()
+
+    def setMIDIInputIndex(self, index:int):
+        midi_input_devices = mido.get_input_names()
+        assert (index >= 0) and (index < len(midi_input_devices)), "Invalid MIDI input device chosen"
+        self.input_device = midi_input_devices[index]
+        
+    def setMIDIOutputIndex(self, index:int):
+        midi_output_devices = mido.get_input_names()
+        assert (index >= 0) and (index < len(midi_output_devices)), "Invalid MIDI output device chosen"
+        self.output_device = midi_output_devices[index]
 
     def initMIDI(self):
         def midi_input_thread_function():
@@ -494,7 +510,8 @@ class ImproviserAgent():
     def setModel(self, model:midi_model.MIDIModel):
         self.model = model 
 
-    def initMIDI(self):
+
+    def initMIDIFromCLI(self):
         """
         initialises midi input and output and returns 
         the two threads controlling them so you can control
@@ -726,3 +743,39 @@ class ImproviserAgent():
         returns the last input sent to the model 
         """
         return self.last_input
+    
+    def getMIDIInputs(self):
+        """
+        get list of available midi inputs
+        """
+        return self.midiHandler.getMIDIInputs()
+
+    def getMIDIOutputs(self):
+        """
+        get list of available midi outputs
+        """
+        return self.midiHandler.getMIDIOutputs()
+
+    def setMIDIInput(self, index:int):
+        """
+        select a midi input by index, ready for 'initMIDI' call later
+        """
+        print(f"Setting midi input to {index}")
+        self.midiHandler.setMIDIInputIndex(index)
+    
+    def setMIDIOutput(self, index:int):
+        """
+        select a midi input by index, ready for 'initMIDI' call later
+        """
+        print(f"Setting midi outout to {index}")
+        self.midiHandler.setMIDIOutputIndex(index)
+    
+    def initMIDI(self):
+        """
+        actually connect to the midi devices. Should call set in and set out first 
+        """
+        assert self.midiHandler.input_device is not None, "You need to call setMIDIInput first"
+        assert self.midiHandler.output_device is not None, "You need to call setMIDIOutput first"
+        
+        self.midiHandler.initMIDI()
+    
