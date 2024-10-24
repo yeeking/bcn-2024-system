@@ -605,14 +605,14 @@ class ImproviserAgent():
                 self.set_status(ImproviserStatus.PLAYING)
             else:
                 self.set_status(ImproviserStatus.LISTENING)
-            time.sleep(0.5)  # Wait for note collection
+            time.sleep(1.0)  # Wait for note collection
       
             if (self.allow_gen_overlap) or (self.midiQ.isEmpty()):
                 # print(f"Q empty: {self.midiQ.isEmpty()} allow overlap {self.allow_gen_overlap}")
                 gen_events = self.call_the_model() # try to generate every x seconds regardless of what has come in
             # else:
             #     print("Q not empty or no overlap allowed")
-            self.midiNoteState.reset() # clear off any outstanding notes    
+                #self.midiNoteState.reset() # clear off any outstanding notes    
 
     
     def start(self):

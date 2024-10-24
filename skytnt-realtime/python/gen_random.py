@@ -243,7 +243,7 @@ if __name__ == "__main__":
     input_instruments = ins_options[-1][0]
     # input_drum_kit = list(drum_kits2number.values())[0]            
     input_drum_kit = None
-    input_gen_events = 256
+    input_gen_events = 1024
     input_temp = 1.0
     input_top_p = 0.98
     input_top_k = 12
