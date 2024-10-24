@@ -697,6 +697,7 @@ class ImproviserAgent():
         print("Impro: resetMemory ")
         self.midiNoteState.reset()
         self.noteBuffer.reset() 
+        self.midiQ.message_queue.clear()
 
         
     def setInputLength(self, length):

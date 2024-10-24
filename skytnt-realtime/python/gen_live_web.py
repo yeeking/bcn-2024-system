@@ -95,21 +95,7 @@ app.layout = html.Div([
             )
         ], style={'width': '45%', 'display': 'inline-block'})
     ], style={'display': 'flex', 'justify-content': 'center', 'align-items': 'center', 'margin-bottom': '20px'}), 
-    # html.Div([
-    # dcc.Dropdown(
-    #     id='midi-input-dropdown',
-    #     options=[{'label': input_name, 'value': idx} for idx, input_name in enumerate(improviser.getMIDIInputs())],
-    #     placeholder='Select MIDI Input', 
-    #     style={'width': '25%'}
-    # ),
-    # dcc.Dropdown(
-    #     id='midi-output-dropdown',
-    #     options=[{'label': output_name, 'value': idx} for idx, output_name in enumerate(improviser.getMIDIOutputs())],
-    #     placeholder='Select MIDI Output', 
-    #     style={'width': '25%'}
 
-    # )], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '20px'}
-    # ), 
     html.Div([
         html.Button('Start improviser', id='start-button', n_clicks=0, style={'margin-right': '10px'}),
         html.Div(id='improviser-start-status'),
@@ -120,8 +106,39 @@ app.layout = html.Div([
 
     ], style={'display': 'flex', 'justify-content': 'center', 'align-items': 'center', 'margin-bottom': '20px'}
     ),
-    dcc.Markdown(id='improviser-status-display', style={'font-size': '12px'}),
+    html.Div([
+    # First child div for the Markdown component
+    html.Div([
+        dcc.Markdown(id='improviser-status-display', style={'font-size': '12px', 'width': '100%'})
+    ], style={'width': '50%', 'display': 'inline-block', 'padding-right': '2%'}),
     
+    # Second child div for the sliders
+    html.Div([
+        html.Div([
+            html.Label("Set input length in ms - how much of your playing to listen to?"),
+            dcc.Slider(
+                id='input-length-slider',
+                min=0,
+                max=4,
+                marks={i: str(v) for i, v in enumerate([500, 1000, 2000, 5000, 10000])},
+                value=2,  # Default value
+            ),
+        ], style={'margin-bottom': '30px'}),  # Reduce margin for better stacking
+        
+        html.Div([
+            html.Label("Set output length: how many notes to generate each time?"),
+            dcc.Slider(
+                id='output-length-slider',
+                min=0,
+                max=5,
+                marks={i: str(v) for i, v in enumerate([8, 16, 32, 64, 128, 512])},
+                value=2,  # Default value
+            ),
+        ])
+        ], style={'width': '50%', 'display': 'inline-block', 'vertical-align': 'top'})
+    
+    ], style={'display': 'flex', 'width': '100%', 'justify-content': 'space-between', 'align-items': 'center', 'margin-bottom': '20px'}), 
+ 
     dcc.Interval(
         id='update-time-trigger',
         interval=1000,  
@@ -134,28 +151,6 @@ app.layout = html.Div([
         n_intervals=0
     ), 
 
-    html.Div([
-        html.Label("Set Input Length"),
-        dcc.Slider(
-            id='input-length-slider',
-            min=0,
-            max=4,
-            marks={i: str(v) for i, v in enumerate([500, 1000, 2000, 5000, 10000])},
-            value=2,  # Default value: corresponding to 8
-        ),
-    ], style={'margin-bottom': '50px'}),
-    
-    html.Div([
-        html.Label("Set Output Length"),
-        dcc.Slider(
-            id='output-length-slider',
-            min=0,
-            max=4,
-            marks={i: str(v) for i, v in enumerate([8, 16, 32, 64, 128])},
-            value=2,  # Default value: corresponding to 8
-        ),
-    ]),
-    # Adding a checkbox (Checklist) to toggle self-listen mode
     html.Div([
         dcc.Checklist(
             id='feedback-checkbox',
@@ -173,13 +168,6 @@ app.layout = html.Div([
         )
     ])
 
-
-    # html.Button('Start improviser', id='start-button', n_clicks=0),
-    # html.Div(id='improviser-start-status'),
-    # html.Button('Reset improviser', id='reset-button', n_clicks=0),
-    # html.Div(id='improviser-reset-status'),
-    # html.Button('Stop improviser', id='stop-button', n_clicks=0),
-    # html.Div(id='improviser-stop-status')
 ])
 
 
@@ -273,7 +261,7 @@ def update_input_length(slider_val):
 )
 def update_output_length(slider_val):
     slider_val = int(slider_val)
-    length = [8, 16, 32, 64, 128][slider_val]
+    length = [8, 16, 32, 64, 128, 512][slider_val]
     improviser.setOutputLength(length)
     return slider_val
 
