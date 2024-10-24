@@ -724,6 +724,9 @@ class ImproviserAgent():
         """
         # print("Impro get status called")
         current_action = ImproviserStatus.status_to_text(self.status)
+        remaining_notes = "**No notes to play**"
+        if self.status == ImproviserStatus.PLAYING:
+            remaining_notes = f" **Remaining notes to play {np.floor(len(self.midiQ.message_queue) / 2)} **"
         params = {"input length": self.input_time_ms, 
                   "output length": self.output_length, 
                   "feedback": self.feedback_mode, 
@@ -734,6 +737,8 @@ class ImproviserAgent():
             breaker = "\n"
         param_state = breaker + breaker.join([k + ":" + str(params[k]) for k in params.keys()])
         status = f"{breaker}Current action: {current_action} {param_state}"
+        if remaining_notes != "":
+            status = f"{breaker}" + remaining_notes + status   
         # print(status)
         return status
     
