@@ -12,12 +12,12 @@ if __name__ == "__main__":
     assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt
 
     tokenizer = MIDITokenizer()
-    # model = MIDIModel(tokenizer).to(device='cuda')
-    model = MIDIModel(tokenizer).to(device='cpu')
+    model = MIDIModel(tokenizer).to(device='cuda')
+    #model = MIDIModel(tokenizer).to(device='cpu')
     
     ModelHandler.load_model(ckpt, model)
     
-    improviser = ImproviserAgent(input_length=16, 
+    improviser = ImproviserAgent(input_time_ms=2000, 
                                  output_length=32, 
                                  feedback_mode=False, 
                                 model=model, 

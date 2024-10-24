@@ -40,9 +40,11 @@ def create_piano_roll(data):
     layout = go.Layout(
         title='Piano Roll',
         xaxis=dict(title='Time'),
-        yaxis=dict(title='Note', autorange='reversed'),
+        # yaxis=dict(title='Note', range=[data['note'].min(), data['note'].max()]),
+        yaxis=dict(title='Note', range=[16, 127]),
         showlegend=False
     )
+
 
     fig = go.Figure(data=traces, layout=layout)
     return fig
@@ -75,8 +77,8 @@ app.layout = html.Div([
             id='input-length-slider',
             min=0,
             max=4,
-            marks={i: str(v) for i, v in enumerate([8, 16, 32, 64, 128])},
-            value=0,  # Default value: corresponding to 8
+            marks={i: str(v) for i, v in enumerate([500, 1000, 2000, 5000, 10000])},
+            value=2,  # Default value: corresponding to 8
         ),
     ], style={'margin-bottom': '50px'}),
     
@@ -87,7 +89,7 @@ app.layout = html.Div([
             min=0,
             max=4,
             marks={i: str(v) for i, v in enumerate([8, 16, 32, 64, 128])},
-            value=0,  # Default value: corresponding to 8
+            value=2,  # Default value: corresponding to 8
         ),
     ]),
     # Adding a checkbox (Checklist) to toggle self-listen mode
@@ -177,7 +179,7 @@ def reset_improviser_button_clicked(n_clicks):
 )
 def update_input_length(slider_val):
     slider_val = int(slider_val)
-    length = [8, 16, 32, 64, 128][slider_val]
+    length = [500, 1000, 2000, 5000, 10000][slider_val]
     improviser.setInputLength(length)
     return slider_val
 
@@ -220,16 +222,16 @@ if __name__ == '__main__':
     assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt
 
     tokenizer = MIDITokenizer()
-    model = MIDIModel(tokenizer).to(device='cpu')
+    model = MIDIModel(tokenizer).to(device='cuda')
     ModelHandler.load_model(ckpt, model)
 
     ## this commented out one was the version mark first used on 10th Oct '24
     ## with 32 memory length and 5 second auto-regen mode
     ## and the la->hawthorne fine tune model: version_703-la-hawthorne-finetune.ckpt 
     #improviser = ImproviserAgent(memory_length=32, model=model, tokenizer=tokenizer, test_mode=False) 
-    improviser = ImproviserAgent(input_length=32, 
+    improviser = ImproviserAgent(input_time_ms=2000, 
                                 output_length=32, 
-                                feedback_mode=True, 
+                                feedback_mode=False, 
                                 allow_gen_overlap=False, 
                                 model=model, tokenizer=tokenizer, test_mode=False) 
     # print(improviser.get_status())
