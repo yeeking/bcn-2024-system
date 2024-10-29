@@ -1,3 +1,9 @@
+## This script takes a folder full of MIDI files
+## (with subfolders etc.)
+## estimates their key and mode (major/minor)
+## then transposes each file to c major/minor
+## writing the result out to another folder
+
 import sys
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed

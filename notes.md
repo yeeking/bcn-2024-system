@@ -1,5 +1,21 @@
 # Notes on building Barcelona system
 
+# 29/10/2024
+
+Been working on ADCx talk and llm thematic system so not much progress after the big push on the user interface which for some reason i did not write about here!
+
+But-  I am working on the following items ready for another session with Finn:
+
+* sort out the training process. Checked my notes and code here and I have not sorted this out properly 
+- So: 
+  * get a proper script to convert folder of midi files to LA format. I have downloaded the code from the notebook that does this. 
+  * use the script to prepare several datasets ready for training
+  * Write out a training plan and submit the batch jobs 
+    -> training on blues dataset from Finn, from scratch, from LA, from LA-hawthorne 
+    -> what about different scales? Make expanded dataset with 11 transpositions of the data. Try that 
+    -> looking for a matrix of training techniques then can let people try them out 
+    
+
 # 25/10/2024
 
 I really want to make it play multi-timbral in response to finn flute input :)
