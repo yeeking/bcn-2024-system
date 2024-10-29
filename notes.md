@@ -1,14 +1,46 @@
 # Notes on building Barcelona system
 
+# 25/10/2024
+
+I really want to make it play multi-timbral in response to finn flute input :)
+let's get into that. '
+
+- is it a case of enabling channels? 
+  -> print enabled channels on multi-instrument test script
+  -> print enabled channeks on current improviser
+- is it a case of adding those programme change messages?
+
 # 24/10/2024
 
 Making changes for second session with Finn:
 
-- reset button on web interface that wipes the memory
-- visualisation of last MIDI prompt
+x- reset button on web interface that wipes the memory
+x- visualisation of last MIDI prompt
 - visualisation of incoming MIDI??
-- is dash the best interface...
+x- is dash the best interface...
 
+In the end I did a lot of work on the user interface and also some quite deep testing of the input and outputs and so on. I achieved the following:
+
+- added midi input and output selection to the interface. Now can completely control it with the web UI
+- fixed the layout on the interface:
+
+-----
+MIDI I/O selection 
+-----
+buttons to start, reset and stop the agent
+-----
+
+status panel |  slider for input time frame length
+             |  slider for output length
+
+-----
+piano roll display showing the last input that was sent to the neural network
+-----
+Toggle controls for feedback (does not work)
+Toggle for overlap mode (allows it to generate and start playing whilst still playing old output)
+
+
+ 
 
 # 23/10/2024
 
