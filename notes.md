@@ -1,5 +1,42 @@
 # Notes on building Barcelona system
 
+# 02/11/2024
+
+Did some quick experiments to try to convert the model into GGUF format which would run really fast.
+
+I think I was able to get it saved into some nearly viable format but there was some sort of fundamental issue meaning I could not run it through the converter script that comes with llamacpp to get a gguf format model. 
+
+I think it needed to be one of the known models ... alas I did not complete writing the notes.
+
+https://huggingface.co/docs/transformers/tasks/language_modeling
+
+
+```
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+# create a blank model
+from midi_model import MIDIModel
+from midi_tokenizer import MIDITokenizer
+
+tokenizer = MIDITokenizer()
+model = MIDIModel(tokenizer).to(device="cpu")
+
+out_folder = "./saved-model/"
+
+model.net.save_pretrained(out_folder)
+model.net_token.save_pretrained(out_folder)
+
+model_id = "skytnt-model"
+
+tokenizer = AutoTokenizer.from_pretrained(model_id, out_folder)
+model = AutoModelForCausalLM.from_pretrained(model_id, out_folder)
+
+tokenizer.save_pretrained('directory')
+model.save_pretrained('directory')
+```
+
+
+
 # 29/10/2024
 
 Been working on ADCx talk and llm thematic system so not much progress after the big push on the user interface which for some reason i did not write about here!
@@ -14,7 +51,27 @@ But-  I am working on the following items ready for another session with Finn:
     -> training on blues dataset from Finn, from scratch, from LA, from LA-hawthorne 
     -> what about different scales? Make expanded dataset with 11 transpositions of the data. Try that 
     -> looking for a matrix of training techniques then can let people try them out 
-    
+  
+
+## Suggestions for a training set from Finn
+
+Since I've never actually tried training it from scratch on a very small dataset, I will try to train on these ones suggested by Finn who said: 
+
+A very basic set might be the Ray Bryant Blues midi set from which I chose:
+1. Blues 3i
+2. Joy (Blues 2i)
+3. Me and the Blues (Blues 1)i
+4. My Blues (Blues 5)
+
+Simple stuff with clearly defined harmonic parameters.
+
+I also looked at the following midi:
+
+1. Abdullah Ibrahim - Ghoza Mtwana
+2. Harold Mabern - Dat Dere
+3. Larry Goldings - Crawdaddy and Roach
+4. Mcoy Tyner - Lonnie's Lament
+5. Oscar Peterson - Basin Street Blues
 
 # 25/10/2024
 
