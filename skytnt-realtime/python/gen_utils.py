@@ -14,6 +14,7 @@ import heapq
 from collections import defaultdict
 import torch.nn.functional as F
 import traceback
+import MIDI 
 
 class ModelHandler:
     def __init__():
@@ -32,17 +33,93 @@ class ModelHandler:
 
 
     @torch.inference_mode()
-    def infer(model:MIDIModel, tokenizer:MIDITokenizer, prompt=None, max_len=512, temp=1.0, top_p=0.98, top_k=20,
-                disable_patch_change=False, disable_control_change=False, disable_channels=None, amp=True, show_bar=False):
-        """
-        actually sends the input to the model and prepares the output 
-        """
-        # print(f"infer max len {max_len}")
+    def generate(model=None, tokenizer=None, prompt=None, max_len=512, temp=1.0, top_p=0.98, top_k=20,
+                disable_patch_change=False, disable_control_change=False, disable_channels=None, amp=True):
+        
+        print(f"generate (skytnt version) with  disable_patch_change {disable_patch_change}, disable_control_change  {disable_control_change}, disable_channels {disable_channels}")
         if disable_channels is not None:
             disable_channels = [tokenizer.parameter_ids["channel"][c] for c in disable_channels]
         else:
             disable_channels = []
         max_token_seq = tokenizer.max_token_seq
+        if prompt is None:
+            print("No prompt... making one ")
+            input_tensor = torch.full((1, max_token_seq), tokenizer.pad_id, dtype=torch.long, device=model.device)
+            print(input_tensor)
+            input_tensor[0, 0] = tokenizer.bos_id  # bos
+        else:
+            print(f"Got a prompt. truncating to {max_token_seq}")
+            prompt = prompt[:, :max_token_seq]
+            if prompt.shape[-1] < max_token_seq:
+                prompt = np.pad(prompt, ((0, 0), (0, max_token_seq - prompt.shape[-1])),
+                                mode="constant", constant_values=tokenizer.pad_id)
+            input_tensor = torch.from_numpy(prompt).to(dtype=torch.long, device=model.device)
+            print(input_tensor.to('cpu'))
+        input_tensor = input_tensor.unsqueeze(0)
+        cur_len = input_tensor.shape[1]
+        bar = tqdm.tqdm(desc="generating", total=max_len - cur_len)
+        with bar, torch.cuda.amp.autocast(enabled=amp):
+            while cur_len < max_len:
+                end = False
+                hidden = model.forward(input_tensor)[0, -1].unsqueeze(0)
+                next_token_seq = None
+                event_name = ""
+                for i in range(max_token_seq):
+                    mask = torch.zeros(tokenizer.vocab_size, dtype=torch.int64, device=model.device)
+                    if i == 0:
+                        mask_ids = list(tokenizer.event_ids.values()) + [tokenizer.eos_id]
+                        if disable_patch_change:
+                            mask_ids.remove(tokenizer.event_ids["patch_change"])
+                        if disable_control_change:
+                            mask_ids.remove(tokenizer.event_ids["control_change"])
+                        mask[mask_ids] = 1
+                    else:
+                        param_name = tokenizer.events[event_name][i - 1]
+                        mask_ids = tokenizer.parameter_ids[param_name]
+                        if param_name == "channel":
+                            mask_ids = [i for i in mask_ids if i not in disable_channels]
+                        mask[mask_ids] = 1
+                    logits = model.forward_token(hidden, next_token_seq)[:, -1:]
+                    scores = torch.softmax(logits / temp, dim=-1) * mask
+                    sample = model.sample_top_p_k(scores, top_p, top_k)
+                    if i == 0:
+                        next_token_seq = sample
+                        eid = sample.item()
+                        if eid == tokenizer.eos_id:
+                            end = True
+                            break
+                        event_name = tokenizer.id_events[eid]
+                    else:
+                        next_token_seq = torch.cat([next_token_seq, sample], dim=1)
+                        if len(tokenizer.events[event_name]) == i:
+                            break
+                if next_token_seq.shape[1] < max_token_seq:
+                    next_token_seq = F.pad(next_token_seq, (0, max_token_seq - next_token_seq.shape[1]),
+                                        "constant", value=tokenizer.pad_id)
+                next_token_seq = next_token_seq.unsqueeze(1)
+                input_tensor = torch.cat([input_tensor, next_token_seq], dim=1)
+                cur_len += 1
+                bar.update(1)
+                yield next_token_seq.reshape(-1).cpu().numpy()
+                if end:
+                    break
+
+
+    @torch.inference_mode()
+    def infer(model:MIDIModel, tokenizer:MIDITokenizer, prompt=None, max_len=512, temp=1.0, top_p=0.98, top_k=20,
+                              disable_patch_change=False, disable_control_change=False, 
+                              disable_channels=None, amp=True, show_bar=False):
+        """
+        actually sends the input to the model and prepares the output 
+        """
+        # print(f"infer max len {max_len}")
+        print(f"Infer (myk_version) with  disable_patch_change {disable_patch_change}, disable_control_change  {disable_control_change}, disable_channels {disable_channels}")
+        if disable_channels is not None:
+            disable_channels = [tokenizer.parameter_ids["channel"][c] for c in disable_channels]
+        else:
+            disable_channels = []
+        max_token_seq = tokenizer.max_token_seq
+        # prompt = None# remove this to make it work again
         if prompt is None:
             input_tensor = torch.full((1, max_token_seq), tokenizer.pad_id, dtype=torch.long, device=model.device)
             input_tensor[0, 0] = tokenizer.bos_id  # bos
@@ -118,6 +195,107 @@ class ModelHandler:
                     break
 
 
+
+    # def generate_midi_seq_multi(model:MIDIModel, tokenizer:MIDITokenizer, score_format_notes, output_len, temp, top_p, top_k, allow_cc, amp, use_model=True, show_bar=False):
+    def generate_midi_seq_multi(model:MIDIModel, tokenizer:MIDITokenizer, score_format_notes, output_len):
+        """
+        controller function for inference. 
+        unlike generate_midi_seq, this one forces generation with multiple instruments
+        Takes score format input, prepares it then sends it over to the model
+        It is possible I can cut this one out and just go straight to the infer function 
+        returns data in the format produced by MidiTokenizer.detokenize, which is 'score' format 
+        """
+
+        ### this bit is from the calling function in get_random
+        msgs_history = []
+        output_sequence = []
+        ins_options = [
+                        [[], "None"],
+                        [["Acoustic Grand"], "None"],
+                        [["Acoustic Grand", "Violin", "Viola", "Cello", "Contrabass"], "Orchestra"],
+                        [["Flute", "Cello", "Bassoon", "Tuba"], "None"],
+                        [["Violin", "Viola", "Cello", "Contrabass", "Trumpet", "French Horn", "Brass Section",
+                        "Flute", "Piccolo", "Tuba", "Trombone", "Timpani"], "Orchestra"],
+                        [["Acoustic Guitar(nylon)", "Acoustic Guitar(steel)", "Electric Guitar(jazz)",
+                        "Electric Guitar(clean)", "Electric Guitar(muted)", "Overdriven Guitar", "Distortion Guitar",
+                        "Electric Bass(finger)"], "Standard"], 
+                        [["Acoustic Grand", "Vibraphone", "Electric Guitar(jazz)",
+                        "Electric Guitar(clean)", "Electric Guitar(muted)", "Overdriven Guitar", "Distortion Guitar",
+                        "Electric Bass(finger)"], "Standard"]
+        ]
+        instruments = ins_options[-1][0]
+        # input_drum_kit = list(drum_kits2number.values())[0]            
+        input_drum_kit = None
+        max_len = output_len
+        temp = 1.0
+        top_p = 0.98
+        top_k = 12
+        allow_cc = True
+        amp = True
+        # msgs_history = []
+        output_sequence = []
+
+        ### this bit is from the receiving function 
+
+
+        number2drum_kits = {-1: "None", 0: "Standard", 8: "Room", 16: "Power", 24: "Electric", 25: "TR-808", 32: "Jazz",
+                            40: "Blush", 48: "Orchestra"}
+        patch2number = {v: k for k, v in MIDI.Number2patch.items()}
+        drum_kits2number = {v: k for k, v in number2drum_kits.items()}
+
+
+        disable_patch_change = False
+        disable_channels = None
+        i = 0
+        input_sequence = [[tokenizer.bos_id] + [tokenizer.pad_id] * (tokenizer.max_token_seq - 1)]
+        patches = {}
+        if instruments is None:
+            instruments = []
+        for instr in instruments:
+            print(instr)
+            patches[i] = patch2number[instr]
+            i = (i + 1) if i != 8 else 10
+        # if drum_kit != "None":
+        #     patches[9] = drum_kits2number[drum_kit]
+        for i, (c, p) in enumerate(patches.items()):
+            input_sequence.append(tokenizer.event2tokens(["patch_change", 0, 0, i, c, p]))
+        
+        # here ius where you can insert 
+        # some more MIDI messages
+        print(f"Input sequence detokenised\n{tokenizer.detokenize(input_sequence)}")
+
+        output_sequence = input_sequence
+        input_sequence = np.asarray(input_sequence, dtype=np.int64)
+        if len(instruments) > 0:
+            disable_patch_change = True
+            disable_channels = [i for i in range(16) if i not in patches]
+        input_gen_events = 256
+        input_temp = 1.0
+        input_top_p = 0.98
+        input_top_k = 12
+        generator = ModelHandler.generate(model, tokenizer, 
+                                          prompt=input_sequence, max_len=512, temp=1.0, top_p=0.98, top_k=12,
+                                          disable_patch_change=disable_patch_change,
+                                         disable_control_change=False, 
+                                         disable_channels=disable_channels, amp=True)
+   
+
+        # # print(f"Calling infer with max len {max_len}")
+        # generator = ModelHandler.infer(model, tokenizer, input_sequence, max_len=max_len, 
+        #                     temp=temp, top_p=top_p, top_k=top_k,
+        #                     disable_patch_change=disable_patch_change, disable_control_change=not allow_cc,
+        #                     disable_channels=disable_channels, amp=amp, show_bar=False)
+        out_tokens = []
+        for i, token_seq in enumerate(generator):
+            # print(f"Gen step {i} of {len(token_seq)}")
+            out_tokens.append(token_seq)
+            ## this bit is for outputting as you generate ... might be useful! 
+            # event = tokenizer.tokens2event(token_seq.tolist())
+
+        score_format_data = tokenizer.detokenize(out_tokens)
+        return score_format_data
+
+
     def generate_midi_seq(model:MIDIModel, tokenizer:MIDITokenizer, score_format_input, output_len, temp, top_p, top_k, allow_cc, amp, use_model=True, show_bar=False):
         """
         controller function for inference. Takes score format input, prepares it then sends it over to the model
@@ -126,36 +304,15 @@ class ModelHandler:
         """
         # print("generate_mid_seq")
         # prepare variables
-        mid_seq = []
         max_len = int(output_len)
         disable_patch_change = False
         disable_channels = None
 
-        # now here we could kick off with some clever shit to force it to 
-        # go mutti-channel but not now as its 10pm and it needs to work tomorrow :)
-
-        # number2drum_kits = {-1: "None", 0: "Standard", 8: "Room", 16: "Power", 24: "Electric", 25: "TR-808", 32: "Jazz",
-        #                     40: "Blush", 48: "Orchestra"}
-        # patch2number = {v: k for k, v in MIDI.Number2patch.items()}
-        # drum_kits2number = {v: k for k, v in number2drum_kits.items()}
-        # i = 0
-        # multi_tokens = [[tokenizer.bos_id] + [tokenizer.pad_id] * (tokenizer.max_token_seq - 1)]
-        # patches = {}
-        # instruments = ["Acoustic Grand", "Vibraphone", "Electric Guitar(jazz)",
-        #               "Electric Guitar(clean)", "Electric Guitar(muted)", "Overdriven Guitar", "Distortion Guitar",
-        #               "Electric Bass(finger)"]
-        # for instr in instruments:
-        #     print(instr)
-        #     patches[i] = patch2number[instr]
-        #     i = (i + 1) if i != 8 else 10
-        # for i, (c, p) in enumerate(patches.items()):
-        #     multi_tokens.append(tokenizer.event2tokens(["patch_change", 0, 0, i, c, p]))
-
 
         # tokens = multi_tokens + tokenizer.tokenize(score_format_input)
         # this is the original version that just uses the sent score events
-        tokens = tokenizer.tokenize(score_format_input)
-        mid = np.asarray(tokens, dtype=np.int64)
+        in_tokens = tokenizer.tokenize(score_format_input)
+        in_tokens = np.asarray(in_tokens, dtype=np.int64)
 
         # print(f"Final midi format for model. Shape: {mid.shape}")
         # mid = mid[:int(max_input_len)] # if want to use a subset of the inputs 
@@ -163,17 +320,18 @@ class ModelHandler:
         if use_model == False: # give up here...
             return 
         # print(f"Calling infer with max len {max_len}")
-        generator = ModelHandler.infer(model, tokenizer, mid, max_len=max_len, 
+        generator = ModelHandler.infer(model, tokenizer, in_tokens, max_len=max_len, 
                             temp=temp, top_p=top_p, top_k=top_k,
                             disable_patch_change=disable_patch_change, disable_control_change=not allow_cc,
                             disable_channels=disable_channels, amp=amp, show_bar=show_bar)
+        out_tokens = []
         for i, token_seq in enumerate(generator):
             # print(f"Gen step {i} of {len(token_seq)}")
-            mid_seq.append(token_seq)
+            out_tokens.append(token_seq)
             ## this bit is for outputting as you generate ... might be useful! 
             # event = tokenizer.tokens2event(token_seq.tolist())
 
-        score_format_data = tokenizer.detokenize(mid_seq)
+        score_format_data = tokenizer.detokenize(out_tokens)
         return score_format_data
 
 
@@ -242,7 +400,10 @@ class RingBuffer:
         """
         with self.lock:
             items = []
-            newest = self.array[self.index-1][age_ind] # index-1 as index always points at next write slot 
+            if self.index == 0: last_index = len(self.array) - 1 # wrap to last one
+            else: last_index = self.index - 1 # previous one
+            if self.array[last_index] == None: return [] # nothing there yet
+            newest = self.array[last_index][age_ind] # index-1 as index always points at next write slot 
             oldest = newest - max_age
             # assert oldest > 0, f"Error: oldest age is less than zero"
             print(f"newest is {newest} so oldest is {oldest}")
@@ -594,10 +755,10 @@ class ImproviserAgent():
                 # note that the onset times in the buffer
                 # are in ticks so need to convert  
                 # self.input_time_ms to ticks
-       
+                
                 max_age_in_ticks = (self.input_time_ms / 1000 / (60/self.bpm)) * self.ticks_per_beat
                 input_events = self.noteBuffer.getItemsInTimeFrame(max_age_in_ticks, 1) # 1 is the index of the timestamp in the events array
-                
+                if len(input_events) == 0: return # return forces it to the finally block, By the way:) 
                 # print(f"Sending {len(input_events)} to the model")
                 self.last_input = copy.deepcopy(input_events)
                 input_events = [self.ticks_per_beat] + [input_events]

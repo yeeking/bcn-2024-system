@@ -16,8 +16,9 @@ import mido
 import pandas as pd 
 
 
-#ckpt = "../../trained-models/skytnt-pre-trained-la-dataset.ckpt"
-ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
+ckpt = "../../trained-models/skytnt/v745_blues.ckpt"
+# ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
+# ckpt = "../../trained-models/skytnt/skytnt-hf-model-la-dataset.ckpt"
 
 assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt
 

@@ -1,6 +1,6 @@
 ### MYK hack that just generates a one-off randomly initialised sequence
 ### with all instruments going nuts
-
+### This is really awesome on the 703 jazz piano model.
 
 import argparse
 import glob
@@ -34,6 +34,8 @@ def write_audio_to_file(audio, sample_rate):
 @torch.inference_mode()
 def generate(prompt=None, max_len=512, temp=1.0, top_p=0.98, top_k=20,
              disable_patch_change=False, disable_control_change=False, disable_channels=None, amp=True):
+    
+    print(f"generate (skytnt version) with  disable_patch_change {disable_patch_change}, disable_control_change  {disable_control_change}, disable_channels {disable_channels}")
     if disable_channels is not None:
         disable_channels = [tokenizer.parameter_ids["channel"][c] for c in disable_channels]
     else:
@@ -113,10 +115,10 @@ def send_msgs(msgs, msgs_history):
     return json.dumps(msgs_history)
 
 
-def run(instruments, drum_kit, mid, midi_events, gen_events, temp, top_p, top_k, allow_cc, amp):
+def run(instruments, drum_kit, input_sequence, midi_events, gen_events, temp, top_p, top_k, allow_cc, amp):
     print("Here goes run")
     msgs_history = []
-    mid_seq = []
+    output_sequence = []
     gen_events = int(gen_events)
     max_len = gen_events
 
@@ -124,7 +126,7 @@ def run(instruments, drum_kit, mid, midi_events, gen_events, temp, top_p, top_k,
     disable_channels = None
     print("Run from zero input")
     i = 0
-    mid = [[tokenizer.bos_id] + [tokenizer.pad_id] * (tokenizer.max_token_seq - 1)]
+    input_sequence = [[tokenizer.bos_id] + [tokenizer.pad_id] * (tokenizer.max_token_seq - 1)]
     patches = {}
     if instruments is None:
         instruments = []
@@ -135,36 +137,37 @@ def run(instruments, drum_kit, mid, midi_events, gen_events, temp, top_p, top_k,
     # if drum_kit != "None":
     #     patches[9] = drum_kits2number[drum_kit]
     for i, (c, p) in enumerate(patches.items()):
-        mid.append(tokenizer.event2tokens(["patch_change", 0, 0, i, c, p]))
+        input_sequence.append(tokenizer.event2tokens(["patch_change", 0, 0, i, c, p]))
     
     # here ius where you can insert 
     # some more MIDI messages
-    
+    print(f"Input sequence detokenised\n{tokenizer.detokenize(input_sequence)}")
 
-    mid_seq = mid
-    mid = np.asarray(mid, dtype=np.int64)
+    output_sequence = input_sequence
+    input_sequence = np.asarray(input_sequence, dtype=np.int64)
     if len(instruments) > 0:
         disable_patch_change = True
         disable_channels = [i for i in range(16) if i not in patches]
 
+
     print("Calling generate")
-    generator = generate(mid, max_len=max_len, temp=temp, top_p=top_p, top_k=top_k,
+    generator = generate(input_sequence, max_len=max_len, temp=temp, top_p=top_p, top_k=top_k,
                          disable_patch_change=disable_patch_change, disable_control_change=not allow_cc,
                          disable_channels=disable_channels, amp=amp)
     print("Got response. iterating it")
     for i, token_seq in enumerate(generator):
-        mid_seq.append(token_seq)
+        output_sequence.append(token_seq)
         # event = tokenizer.tokens2event(token_seq.tolist())
         # yield mid_seq, None, None, send_msgs([create_msg("visualizer_append", event), create_msg("progress", [i + 1, gen_events])], msgs_history), msgs_history
-    mid = tokenizer.detokenize(mid_seq)
+    input_sequence = tokenizer.detokenize(output_sequence)
     print("Writing to output.md")
     with open(f"output.mid", 'wb') as f:
-        f.write(MIDI.score2midi(mid))
+        f.write(MIDI.score2midi(input_sequence))
     soundfont_path = "../../../soundfonts/SGM-v2.01-NicePianosGuitarsBass-V1.2.sf2"
-    audio = synthesis(MIDI.score2opus(mid), soundfont_path)
+    audio = synthesis(MIDI.score2opus(input_sequence), soundfont_path)
     write_audio_to_file(audio, 44100)
     print("Got audio of length ", audio.shape)
-    return mid_seq, "output.mid", (44100, audio), send_msgs([create_msg("visualizer_end", None)], msgs_history), msgs_history
+    return output_sequence, "output.mid", (44100, audio), send_msgs([create_msg("visualizer_end", None)], msgs_history), msgs_history
 
 
 def cancel_run(mid_seq, msgs_history):
@@ -216,12 +219,12 @@ drum_kits2number = {v: k for k, v in number2drum_kits.items()}
 if __name__ == "__main__":
   
     ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
-
+    print("Creating model and loading to GPU")
     tokenizer = MIDITokenizer()
     model = MIDIModel(tokenizer).to(device='cuda')
     print(f"loading model from  {ckpt}")
     load_model(ckpt)
-
+    
 
     input_midi = "input mid"
     input_midi_events = 128
@@ -243,15 +246,18 @@ if __name__ == "__main__":
     input_instruments = ins_options[-1][0]
     # input_drum_kit = list(drum_kits2number.values())[0]            
     input_drum_kit = None
-    input_gen_events = 1024
+    input_gen_events = 256
     input_temp = 1.0
     input_top_p = 0.98
     input_top_k = 12
     input_allow_cc = True
     input_amp = True
     print("calling run")
-    run(input_instruments, input_drum_kit,
-        input_midi, input_midi_events,
-        input_gen_events, input_temp, input_top_p, input_top_k,
-        input_allow_cc, input_amp)
+    run(instruments=input_instruments, # selected from default sets above
+        drum_kit=input_drum_kit, # set to none 
+        input_sequence=input_midi, # set to 'input mid" which does not exist
+        midi_events=input_midi_events, # set to 128
+        gen_events=input_gen_events, # set to 1024
+        temp=input_temp, top_p=input_top_p, top_k=input_top_k,
+        allow_cc=input_allow_cc, amp=input_amp)
 

@@ -102,6 +102,7 @@ class MIDITokenizer:
     def event2tokens(self, event):
         name = event[0]
         params = event[1:]
+        print(f"params for {name}: {self.events[name]}")
         tokens = [self.event_ids[name]] + [self.parameter_ids[p][params[i]]
                                            for i, p in enumerate(self.events[name])]
         tokens += [self.pad_id] * (self.max_token_seq - len(tokens))

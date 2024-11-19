@@ -1,5 +1,75 @@
 # Notes on building Barcelona system
 
+# 18/11/2024
+
+A bit of a hiatus to work on the IEEE educon paper etc. but now I am back working on the multitrack output problem.
+
+I have a generator script (test_gen.py)that will generate multi-track using my generator code - GOOD. To achieve that:
+
+- I took a multi-track file from the LA MIDI dataset
+- I read it in and converted to score format like this:
+
+```
+midif = 'multitrack-midi.mid'
+with open(midif, 'rb') as file:
+    mid = file.read()
+input_events = MIDI.midi2score(mid)
+```
+
+- This is where it gets interesting. I then tried to boil it down to what would trigger multi-track generation. First, filter it down to just notes and patch changes:
+
+```
+input_events[1] = [i for i in input_events[1] if (i[0] == 'patch_change') or (i[0] == 'note')]
+```
+Then only select the first x events:
+
+```
+input_events[1] = input_events[1][0:512] 
+```
+That generates multi-track.
+
+How many patch changes in that file?
+
+```
+[i for i in input_events[1] if i[0] == 'patch_change']
+[['patch_change', 472, 1, 33],
+ ['patch_change', 544, 2, 0],
+ ['patch_change', 616, 3, 75],
+ ['patch_change', 688, 4, 50],
+ ['patch_change', 760, 5, 52],
+ ['patch_change', 832, 6, 80],
+ ['patch_change', 904, 7, 24],
+ ['patch_change', 976, 8, 26],
+ ['patch_change', 1048, 9, 0],
+ ['patch_change', 1120, 10, 68],
+ ['patch_change', 1192, 11, 119],
+ ['patch_change', 1264, 12, 40],
+ ['patch_change', 1336, 13, 30],
+ ['patch_change', 1408, 14, 29],
+ ['patch_change', 1480, 15, 53]]
+
+```
+
+Ok now I can try just sending those patch changes and a bunch of notes artificially:
+
+```
+# the ticks per beat value
+input_events2 = [384, []]
+# now some patch changes, one on each channel, random values
+for ch in range (1, 16): input_events2[1].append(['patch_change', 384, ch, np.random.randint(0, 120)])
+```
+
+Can't really make a lot of sense of how to trigger the model. Tried various combinations of inputs:
+```
+16 patch changes read from the mutlitrack file as aobve
+16 random patch changes placed at even intervals of tpb/4
++ piano midi from mark file or whatever midi from the mutlitrack file
+(always filtered to note events only)
+
+```
+
+
+
 # 02/11/2024
 
 Did some quick experiments to try to convert the model into GGUF format which would run really fast.
