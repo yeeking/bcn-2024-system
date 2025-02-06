@@ -16,14 +16,15 @@ import mido
 import pandas as pd 
 
 
-ckpt = "../../trained-models/skytnt/v745_blues.ckpt"
-# ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
+# ckpt = "../../trained-models/skytnt/v745_blues.ckpt"
+ckpt = "../../trained-models/skytnt/version_703-la-hawthorne-finetune.ckpt"
 # ckpt = "../../trained-models/skytnt/skytnt-hf-model-la-dataset.ckpt"
 
 assert os.path.exists(ckpt), "Cannot find checkpoint file " + ckpt
 
 tokenizer = MIDITokenizer()
-model = MIDIModel(tokenizer).to(device='cuda')
+# model = MIDIModel(tokenizer).to(device='cuda')
+model = MIDIModel(tokenizer)
 ModelHandler.load_model(ckpt, model)
 
 ## this commented out one was the version mark first used on 10th Oct '24
